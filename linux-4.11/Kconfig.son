@@ -1,0 +1,7 @@
+menu "SON"
+
+config SON
+	tristate "Enable Page Scanning support."
+# tristate : yes, module, no
+	default n
+endmenu

@@ -1,0 +1,36 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_PROGRAM_AUTHOR	Darren Hiebert	/dhiebert@users.sourceforge.net/
+!_TAG_PROGRAM_NAME	Exuberant Ctags	//
+!_TAG_PROGRAM_URL	http://ctags.sourceforge.net	/official site/
+!_TAG_PROGRAM_VERSION	5.9~svn20110310	//
+SON_BUFLEN	son_proc.c	23;"	d	file:
+SON_DISABLE	son_proc.c	25;"	d	file:
+SON_ENABLE	son_proc.c	24;"	d	file:
+block_end_pfn	son_scan.c	106;"	d	file:
+block_start_pfn	son_scan.c	105;"	d	file:
+pageblock_end_pfn	son_scan.c	109;"	d	file:
+pageblock_start_pfn	son_scan.c	107;"	d	file:
+scan_pageblock	son_scan.c	/^static scan_result_t scan_pageblock(struct son_scand_control *sc, unsigned long low_pfn,$/;"	f	file:
+scan_zone	son_scan.c	/^static int scan_zone(struct zone *zone, struct son_scand_control *sc)$/;"	f	file:
+scand_should_stop	son_scan.c	/^static int scand_should_stop(void)$/;"	f	file:
+scand_worklist_lock	son_scan.c	/^spinlock_t scand_worklist_lock;$/;"	v
+son_parent_dir	son_proc.c	/^struct proc_dir_entry* son_parent_dir;$/;"	v	typeref:struct:proc_dir_entry
+son_proc_init	son_proc.c	/^static int __init son_proc_init(void)$/;"	f	file:
+son_proc_init	son_proc.c	/^subsys_initcall(son_proc_init);$/;"	v
+son_read_refscan_enable	son_proc.c	/^static ssize_t son_read_refscan_enable(struct file *filep, $/;"	f	file:
+son_refscan_enable	son_proc.c	/^atomic_t son_refscan_enable;	$/;"	v
+son_refscan_enable_data	son_proc.c	/^struct proc_dir_entry* son_refscan_enable_data;$/;"	v	typeref:struct:proc_dir_entry
+son_refscan_enable_ops	son_proc.c	/^struct file_operations son_refscan_enable_ops = {$/;"	v	typeref:struct:file_operations
+son_scand_check	son_scan.c	/^static int son_scand_check(void)$/;"	f	file:
+son_scand_do_work	son_scan.c	/^static int son_scand_do_work(pg_data_t *pgdat)$/;"	f	file:
+son_scand_init	son_scan.c	/^static int __init son_scand_init(void)$/;"	f	file:
+son_scand_init	son_scan.c	/^subsys_initcall(son_scand_init);$/;"	v
+son_scand_kthread	son_scan.c	/^static int son_scand_kthread(void *none)$/;"	f	file:
+son_scand_kthread	son_scan.c	/^static int son_scand_kthread(void *p)$/;"	f	file:
+son_scand_kthread_manager	son_scan.c	/^static int son_scand_kthread_manager(void)$/;"	f	file:
+son_scand_kthread_run	son_scan.c	/^static int son_scand_kthread_run(int nid)$/;"	f	file:
+son_scand_list	son_scan.c	/^struct list_head son_scand_list;$/;"	v	typeref:struct:list_head
+son_scand_sleep_millisecs	son_scan.c	/^static unsigned int son_scand_sleep_millisecs = 60000; \/\/ 60s $/;"	v	file:
+son_scand_wait	son_scan.c	/^DECLARE_WAIT_QUEUE_HEAD(son_scand_wait);$/;"	v
+son_write_refscan_enable	son_proc.c	/^static ssize_t son_write_refscan_enable(struct file *filep, $/;"	f	file:

@@ -2,9 +2,10 @@
 
 DIR_EXPR=$(pwd)/.. 
 DIR_DATA=${DIR_EXPR}/data 
-PROC_SCAN_ENABLE=/proc/son/scan_ref_enable 
+PROC_SCAN_ENABLE=/proc/son/scan_pbstate_enable 
 PROC_DEBUG_ENABLE=/proc/son/debug
-VERSION=""
+VERSION="" 
+WORKLOAD=""
 DEBUG=0
 SLEEP=""
 RUNNING=1
@@ -29,8 +30,8 @@ handler(){
 usage()
 {
     echo ""
-    echo "  usage : # ./expr.sh -s 10s -t v1"   
-    echo "        : # ./expr.sh -s 1m -d -t v2"
+    echo "  usage : # ./expr.sh -s 10s -t v1 -w redis"   
+    echo "        : # ./expr.sh -s 1m -d -t v2 -w 429mcf"
     echo ""
 }
 
@@ -42,9 +43,12 @@ then
 fi
 
 # option parsing
-while getopts t:s:d opt 
+while getopts w:t:s:d opt 
 do
     case $opt in 
+        w)
+            WORKLOAD=$OPTARG
+            ;;
         t)
             VERSION=$OPTARG
             ;;
@@ -68,13 +72,13 @@ do
     esac
 done
 
-if [ -z $SLEEP ] || [ -z $VERSION ] 
+if [ -z $SLEEP ] || [ -z $VERSION ] || [ -z $WORKLOAD ] 
 then 
     usage
     exit 0
 fi
 
-./son_log.sh -t $VERSION &
+./son_log.sh -t $VERSION -w $WORKLOAD &
 
 while [ ${RUNNING} == 1 ];
 do  

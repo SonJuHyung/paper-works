@@ -7,7 +7,7 @@
 #define SON_ENABLE      1
 #define SON_DISABLE     0
 
-extern atomic_t son_refscan_enable;	
+extern atomic_t son_scan_pbstate_enable;	
 extern atomic_t son_debug_enable;	
 
 typedef enum {

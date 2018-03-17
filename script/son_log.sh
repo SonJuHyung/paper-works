@@ -3,9 +3,10 @@
 DIR_EXPR=$(pwd)/..
 DIR_DATA=${DIR_EXPR}/data 
 DIR_FTRACE=/sys/kernel/debug/tracing/ 
-PROC_SCAN_ENABLE=/proc/son/scan_ref_enable 
+PROC_SCAN_ENABLE=/proc/son/scan_pbstate_enable 
 FILE_DATA=""
-VERSION=""
+VERSION="" 
+WORKLOAD=""
 
 trap 'handler' 2
 
@@ -19,8 +20,8 @@ handler(){
 usage()
 {
     echo ""
-    echo "  usage : # ./son_log.sh -t v1"   
-    echo "        : # ./son_log.sh -t v2"
+    echo "  usage : # ./son_log.sh -t v1 -w redis"
+    echo "        : # ./son_log.sh -t v2 -w mcf429"
     echo ""
 }
 
@@ -32,9 +33,12 @@ then
 fi
 
 # option parsing
-while getopts t: opt 
+while getopts w:t: opt 
 do
-    case $opt in
+    case $opt in 
+        w)
+            WORKLOAD=$OPTARG
+            ;;
         t)
             VERSION=$OPTARG
             ;;
@@ -45,13 +49,13 @@ do
     esac
 done
 
-if [ -z $VERSION ] 
+if [ -z $VERSION ] || [ -z $WORKLOAD ] 
 then 
     usage
     exit 0
 fi
 
-FILE_DATA=${DIR_DATA}/pbstate_result_${VERSION}.txt 
+FILE_DATA=${DIR_DATA}/pbstate_result_${WORKLOAD}_${VERSION}.txt 
 echo > ${DIR_FTRACE}/trace
 cat ${DIR_FTRACE}/trace_pipe | awk '{ split($0,arr,":"); printf("%s\n",arr[3]); }'> ${FILE_DATA} 
 

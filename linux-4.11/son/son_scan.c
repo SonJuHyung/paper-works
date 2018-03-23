@@ -81,27 +81,26 @@ static int scand_should_stop(void)
 }
 #endif 
 
-static scan_result_t scan_pageblock(struct son_scand_control *sc, unsigned long low_pfn,
-       unsigned long end_pfn) 
- //       unsigned long end_pfn, unsigned long *index)
-        // FIXME
-
+static int scan_pageblock(struct son_scand_control *sc, unsigned long low_pfn,
+        unsigned long end_pfn, unsigned long *index)
 {
 	struct page *page = NULL;
-    unsigned long migrate_type=PB_STATNUM;
+    unsigned long migrate_type=PB_MAXENTRY;
 
+#if 0
     int mapcount;
     int order=-1;
     int lru=-1;
     int ref_count=-1;
-    // FIXME
+#endif
 
-	for (; low_pfn < end_pfn; low_pfn++) {
+	for (; low_pfn < end_pfn; low_pfn++, (*index)++) {
 
         if(!pfn_valid_within(low_pfn))
             continue;
 
         page = pfn_to_page(low_pfn);
+
 #if 0
         if (PageBuddy(page)) {
             // buddy page 인 경우 
@@ -120,7 +119,7 @@ static scan_result_t scan_pageblock(struct son_scand_control *sc, unsigned long 
             return PB_INUSE;
         }        
 #endif 
-
+#if 0
         order=ref_count=-1;
         mapcount=lru=0;
 
@@ -130,10 +129,31 @@ static scan_result_t scan_pageblock(struct son_scand_control *sc, unsigned long 
         if(PageLRU(page)){
             lru=1;
         }
-
+#endif
+#if 0
         if(PageBuddy(page) || (!mapcount && !lru && !ref_count)){
 //            migrate_type = PB_FREE;
+            trace_printk("%lu,%d \n",*index ,PB_FREE);
+            sc->pb_stat[PB_FREE]++;
+
             continue;
+        }        
+#endif 
+        if(page->son_compact_target){
+            page->son_compact_target=0;
+            trace_printk("%lu,%d \n",*index ,PB_COMPACT);
+            sc->pb_stat[PB_COMPACT]++;
+            continue;
+        }
+        if(!PageLRU(page)){ 
+            if(PageIsolated(page)){
+                trace_printk("%lu,%d \n",*index ,PB_ISOLATE);
+                sc->pb_stat[PB_ISOLATE]++;
+            }
+            else{
+                trace_printk("%lu,%d \n",*index ,PB_FREE);
+                sc->pb_stat[PB_FREE]++;
+            }
         }else{
             migrate_type = get_pageblock_migratetype(page);
             switch(migrate_type){
@@ -149,66 +169,15 @@ static scan_result_t scan_pageblock(struct son_scand_control *sc, unsigned long 
                 case MIGRATE_HIGHATOMIC:
                     migrate_type = PB_HIGHATOMIC;
                     break;
-                case MIGRATE_ISOLATE:
-                    migrate_type = PB_ISOLATE;
-                    break;
             }
-            return migrate_type;
-        }
-#if 0
 
-        if(PageBuddy(page)){
-            migrate_type = PB_FREE;
-            order =  page_order_unsafe(page); 
-        }else{
-            switch(migrate_type){
-                case MIGRATE_MOVABLE:
-                    migrate_type = PB_MOVABLE;
-                    break;
-                case MIGRATE_UNMOVABLE:
-                    migrate_type = PB_UNMOVABLE;
-                    break;
-                case MIGRATE_RECLAIMABLE:
-                    migrate_type = PB_RECLAIMABLE;
-                    break;
-                case MIGRATE_HIGHATOMIC:
-                    migrate_type = PB_HIGHATOMIC;
-                    break;
-                case MIGRATE_ISOLATE:
-                    migrate_type = PB_ISOLATE;
-                    break;
-            }
+            trace_printk("%lu,%lu \n",*index ,migrate_type);
+            sc->pb_stat[migrate_type]++;
+           
         }
-#endif
-//        trace_printk("%lu,migtyp:%lu,order:%d,mapcnt:%d,lru:%d,ref_count:%d \n",*index ,migrate_type, order,mapcount,lru,ref_count);               
-#if 0
-        if(mapcount>=0){
-            migrate_type = get_pageblock_migratetype(page);            
-            if(migrate_type == MIGRATE_MOVABLE)
-                return PB_MOVABLE;
-            else if(migrate_type == MIGRATE_UNMOVABLE)
-                return PB_UNMOVABLE;
-            else if(migrate_type == MIGRATE_RECLAIMABLE)
-                return PB_RECLAIMABLE;
-            else if(migrate_type == MIGRATE_HIGHATOMIC)
-                return PB_HIGHATOMIC;
-            else if(migrate_type == MIGRATE_ISOLATE)
-                return PB_ISOLATE;
-            else 
-               return PB_STATNUM; 
-
-        }
-        if(PageLRU(page)){
-
-                
-            trace_printk("%lu,%lu,%d \n",*index ,migrate_type, mapcount);
-
-        }else if(PageBuddy(page)){
-            trace_printk("%lu,%lu,%d \n",*index ,migrate_type, mapcount);
-        }
-#endif
     }
-    return PB_FREE;
+
+    return 0;
 }
 
 #define block_start_pfn(pfn, order)	round_down(pfn, 1UL << (order))
@@ -238,30 +207,22 @@ static int scan_zone(struct zone *zone, struct son_scand_control *sc, unsigned l
 	for (; (block_end_pfn <= sc->pfn_end);
 			low_pfn = block_end_pfn,
 			block_start_pfn = block_end_pfn,
-			block_end_pfn += pageblock_nr_pages,
-            (*index)++) {
+			block_end_pfn += pageblock_nr_pages){
 
         // free_pfn 까지 있는 모든 page block 들에 대해 page block 단위로 scan
-        scan_result_t pb_state;
 
 		page = pageblock_pfn_to_page(block_start_pfn, block_end_pfn,zone);
+		if (!page){
+//            *index+=512;
+//            trace_printk("%lu,%d \n",*index ,PB_INVALID);
+            sc->pb_stat[PB_INVALID]+=512;
+			continue;            
+        }
+
         // scan 할 page block(block_start_pfn ~ block_end_pfn 범위) 내의 
         // 첫번째 struct page 가져옴 
 
-		if (!page){
-            trace_printk("%lu,%d \n",*index ,PB_INVALID);
-			continue;
-        }
-            // 다음 page block 으로 이동
-
-        // low_pfn 부터 block_end_pfn 까지의 sigle page block 내의 
-        // 512 개 page frame 에 대해 isolate_mode 로 isolate 수행 
-
-		pb_state = scan_pageblock(sc,low_pfn,block_end_pfn);
-        
-        sc->pb_stat[pb_state]++;
-
-        trace_printk("%lu,%d \n",*index ,pb_state);
+        scan_pageblock(sc,low_pfn,block_end_pfn,index);        
 	}
 
 	return 0;
@@ -289,14 +250,13 @@ static int son_scand_do_work(pg_data_t *pgdat)
         scan_zone(zone, &sc, &index); 
 
         if(atomic_read(&son_debug_enable)){
-            trace_printk("son - zone scan complete statue : free(%lu), umov(%lu), mov(%lu), reclm(%lu), hato(%lu), iso(%lu), inv(%lu) \n", 
-                    sc.pb_stat[PB_FREE], sc.pb_stat[PB_UNMOVABLE],sc.pb_stat[PB_MOVABLE],sc.pb_stat[PB_RECLAIMABLE],sc.pb_stat[PB_HIGHATOMIC],sc.pb_stat[PB_ISOLATE],sc.pb_stat[PB_INVALID]);
+            trace_printk("son - zone scan complete state : free(%lu), umov(%lu), mov(%lu), reclm(%lu), hato(%lu), iso(%lu), inv(%lu) \n", sc.pb_stat[PB_FREE], sc.pb_stat[PB_UNMOVABLE],sc.pb_stat[PB_MOVABLE],sc.pb_stat[PB_RECLAIMABLE],sc.pb_stat[PB_HIGHATOMIC],sc.pb_stat[PB_ISOLATE],sc.pb_stat[PB_INVALID]);
         }
 
     }
     if(atomic_read(&son_debug_enable)){
-        trace_printk("son - node scan complete statue : free(%lu), umov(%lu), mov(%lu), reclm(%lu), hato(%lu), iso(%lu), inv(%lu) \n", 
-                sc.pb_stat[PB_FREE], sc.pb_stat[PB_UNMOVABLE],sc.pb_stat[PB_MOVABLE],sc.pb_stat[PB_RECLAIMABLE],sc.pb_stat[PB_HIGHATOMIC],sc.pb_stat[PB_ISOLATE],sc.pb_stat[PB_INVALID]);
+
+        trace_printk("son - node scan complete state : free(%lu), umov(%lu), mov(%lu), reclm(%lu), hato(%lu), iso(%lu), inv(%lu) \n", sc.pb_stat[PB_FREE], sc.pb_stat[PB_UNMOVABLE],sc.pb_stat[PB_MOVABLE],sc.pb_stat[PB_RECLAIMABLE],sc.pb_stat[PB_HIGHATOMIC],sc.pb_stat[PB_ISOLATE],sc.pb_stat[PB_INVALID]);
     }
 
     pgdat->kscand_status=0;
@@ -310,6 +270,7 @@ static int son_scand_kthread(void *p)
 	pg_data_t *pgdat = (pg_data_t*)p;
 
     set_freezable();
+	set_user_nice(current, MIN_NICE);
 
     while(!kthread_should_stop()){
         wait_event_freezable(son_scand_wait,son_scand_check());

@@ -18,8 +18,11 @@ path<-getwd()
 path_file<-paste(path,"/../data/",name_file,sep="")
 path_result<-paste(path,"/plot/",name_result,sep="")
 
-#         free   unmov   mov    recm     hato    iso      inv
-colors=c("White","Red","Green","Yellow","White","white","Gray")
+#           0      1      2       3         4       5        6     7
+#         free    unmov    mov    recm     hato    iso      inv   compact
+colors=c("White","Green","Green","Green","White","white","Gray", "Red")
+#colors=c("White","Red","Green","Yellow","White","white","Gray")
+
 print("done !");
 
 # reading data  
@@ -44,9 +47,9 @@ png(path_result, width=3400,height=500,unit="px")
 par(mar=c(10,5,3,3)) # default : c(5.1, 4.1, 4.1, 2.1) / margin : down, left, up, right
 par(mgp=c(6,2,0)) # default : c(3,1,0) / position : title, line label, line
 plot(1,type="n",xlab="physical page block status ",ylab="",xlim=c(1,width_max),ylim=c(1,height_max+1), xaxt='n',yaxt='n',cex.lab=4,xaxs='i')
-
-x_bar_raw<-seq(from=0,to=width_max,by=2048)
-x_bar<-paste(x_bar_raw/512,"GB",sep = " ")
+KB_to_GB=1048576
+x_bar_raw<-seq(from=0,to=width_max,by=KB_to_GB)
+x_bar<-paste(x_bar_raw/(KB_to_GB)*4,"GB",sep = " ")
 #y_bar<-seq(from=0,to=height_max,1)
 
 axis(1,at=x_bar_raw,labels=x_bar,cex.axis=2,tck=-0.01)

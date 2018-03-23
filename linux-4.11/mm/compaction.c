@@ -865,6 +865,9 @@ isolate_success:
 		list_add(&page->lru, &cc->migratepages);
 		cc->nr_migratepages++;
 		nr_isolated++;
+#ifdef CONFIG_SON  
+        page->son_compact_target=1;
+#endif
 
 		/*
 		 * Record where we could have freed pages by migration and not

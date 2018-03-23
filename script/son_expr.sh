@@ -9,7 +9,10 @@ WORKLOAD=""
 DEBUG=0
 SLEEP=""
 RUNNING=1
-COUNT=1
+COUNT=1 
+DIR_FTRACE=/sys/kernel/debug/tracing/
+FTRACE_BUFSIZE_DEFAULT=1410
+FTRACE_BUFSIZE=`expr ${FTRACE_BUFSIZE_DEFAULT} \* 1000` 
 
 # signal handler
 trap 'handler' 2
@@ -23,6 +26,7 @@ handler(){
     fi 
     echo 0 > ${PROC_SCAN_ENABLE}
     RUNNING=0    
+    echo ${FTRACE_BUFSIZE_DEFAULT} > /sys/kernel/debug/tracing/buffer_size_kb
     kill -9 `pgrep son_log` 
 }
 
@@ -78,6 +82,8 @@ then
     exit 0
 fi
 
+echo "increase buffer size to ${FTRACE_BUFSIZE}"
+echo ${FTRACE_BUFSIZE} > ${DIR_FTRACE}/buffer_size_kb
 ./son_log.sh -t $VERSION -w $WORKLOAD &
 
 while [ ${RUNNING} == 1 ];

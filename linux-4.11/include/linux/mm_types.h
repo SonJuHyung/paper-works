@@ -211,6 +211,10 @@ struct page {
 	 * is a pointer to such a status block. NULL if not tracked.
 	 */
 	void *shadow;
+#endif 
+
+#ifdef CONFIG_SON
+	int son_compact_target;
 #endif
 
 #ifdef LAST_CPUPID_NOT_IN_PAGE_FLAGS
@@ -494,7 +498,10 @@ struct mm_struct {
 #ifdef CONFIG_HUGETLB_PAGE
 	atomic_long_t hugetlb_usage;
 #endif
-	struct work_struct async_put_work;
+	struct work_struct async_put_work; 
+#ifdef CONFIG_SON
+    struct list_head son_scan_link;
+#endif
 };
 
 extern struct mm_struct init_mm;

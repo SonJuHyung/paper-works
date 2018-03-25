@@ -28,7 +28,7 @@ print("done !");
 # reading data  
 print(paste("reading ", path_file,"..."));
 data_frame<-read.table(path_file, sep=",", header=F)
-width_max<-max(data_frame$V1)
+width_max<-max(data_frame$V1)+512
 height_max<-nrow(data_frame[data_frame$V1==0,])
 
 print(paste("width(addr max) : ", width_max))
@@ -58,19 +58,52 @@ axis(1,at=x_bar_raw,labels=x_bar,cex.axis=2,tck=-0.01)
 color_index=0
 x_pos=0 
 y_pos=0
-index=0
 
 free=umov=mov=reclm=high=iso=inv=0
+
+pre_x=0
+cur_x=0
+pre_state=-1
+cur_state=-1
+j=0
+index=1
+
+temp=0
 for( i in data_frame$V1  ){ 
-    if(i == 0)
+    if(i == 0){
+        cur_x=0
         y_pos=y_pos+1 
+    }
 
-    x_pos=i+1
-    color_index=data_frame$V2[index+1]
+    cur_x=i
+    cur_state=data_frame$V2[index]
 
-    points(x_pos,y_pos,pch=1,cex=0.5,col=colors[color_index+1])  
-      index=index+1 
+    if(pre_x == (width_max-512)){
+        for(j in (pre_x):(pre_x+512)){
+            print(paste(j+1,",",y_pos-1,",",pre_state+1,",son",sep=""))
+            points(j+1,y_pos-1,pch=1,cex=0.5,col=colors[pre_state+1])  
+        }
+        pre_x=0
+    }
 
+    if(pre_x != cur_x){
+        for(j in (pre_x):(cur_x-1)){
+            print(paste(j+1,",",y_pos,",",pre_state+1,",son",sep=""))
+            points(j+1,y_pos,pch=1,cex=0.5,col=colors[pre_state+1])  
+        }
+    }
+
+    index=index+1 
+    pre_state=cur_state
+    pre_x=cur_x
+}
+
+if(pre_x == (width_max-512)){
+    for(j in (pre_x):(pre_x+512)){        
+        print(paste(j+1,",",y_pos,",",pre_state+1,",son",sep=""))
+        points(j+1,y_pos,pch=1,cex=0.5,col=colors[pre_state+1])  
+    }
+    pre_x=0
 }
 
 print("done !")

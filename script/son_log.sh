@@ -58,4 +58,5 @@ fi
 FILE_DATA=${DIR_DATA}/pbstate_result_${WORKLOAD}_${VERSION}.txt 
 echo > ${DIR_FTRACE}/trace
 cat ${DIR_FTRACE}/trace_pipe | awk '{ split($0,arr,":"); printf("%s\n",arr[3]); }'> ${FILE_DATA} 
+#cat ${DIR_FTRACE}/trace_pipe > ${FILE_DATA} 
 

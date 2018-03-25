@@ -85,8 +85,8 @@ static int scan_pageblock(struct son_scand_control *sc, unsigned long low_pfn,
         unsigned long end_pfn, unsigned long *index)
 {
 	struct page *page = NULL;
-    unsigned long migrate_type=PB_MAXENTRY;
-
+    unsigned long page_type=PB_MAXENTRY, pre_page_type=PB_MAXENTRY;
+    
 #if 0
     int mapcount;
     int order=-1;
@@ -132,49 +132,48 @@ static int scan_pageblock(struct son_scand_control *sc, unsigned long low_pfn,
 #endif
 #if 0
         if(PageBuddy(page) || (!mapcount && !lru && !ref_count)){
-//            migrate_type = PB_FREE;
+//            page_type = PB_FREE;
             trace_printk("%lu,%d \n",*index ,PB_FREE);
             sc->pb_stat[PB_FREE]++;
 
             continue;
         }        
 #endif 
-        if(page->son_compact_target){
-            page->son_compact_target=0;
-            trace_printk("%lu,%d \n",*index ,PB_COMPACT);
-            sc->pb_stat[PB_COMPACT]++;
-            continue;
-        }
         if(!PageLRU(page)){ 
             if(PageIsolated(page)){
-                trace_printk("%lu,%d \n",*index ,PB_ISOLATE);
-                sc->pb_stat[PB_ISOLATE]++;
+                page_type=PB_ISOLATE;
             }
             else{
-                trace_printk("%lu,%d \n",*index ,PB_FREE);
-                sc->pb_stat[PB_FREE]++;
+                page_type=PB_FREE;
             }
         }else{
-            migrate_type = get_pageblock_migratetype(page);
-            switch(migrate_type){
+            page_type = get_pageblock_migratetype(page);
+            switch(page_type){
                 case MIGRATE_MOVABLE:
-                    migrate_type = PB_MOVABLE;
+                    page_type = PB_MOVABLE;
                     break;
                 case MIGRATE_UNMOVABLE:
-                    migrate_type = PB_UNMOVABLE;
+                    page_type = PB_UNMOVABLE;
                     break;
                 case MIGRATE_RECLAIMABLE:
-                    migrate_type = PB_RECLAIMABLE;
+                    page_type = PB_RECLAIMABLE;
                     break;
                 case MIGRATE_HIGHATOMIC:
-                    migrate_type = PB_HIGHATOMIC;
+                    page_type = PB_HIGHATOMIC;
                     break;
             }
 
-            trace_printk("%lu,%lu \n",*index ,migrate_type);
-            sc->pb_stat[migrate_type]++;
-           
+            if(page->son_compact_target){
+                page->son_compact_target=0;
+                page_type = PB_COMPACT;
+            }
         }
+        if(page_type != pre_page_type){
+            trace_printk("%lu,%lu \n",*index ,page_type);
+        }
+        sc->pb_stat[page_type]++;
+        pre_page_type = page_type;
+
     }
 
     return 0;
@@ -254,10 +253,8 @@ static int son_scand_do_work(pg_data_t *pgdat)
         }
 
     }
-    if(atomic_read(&son_debug_enable)){
 
-        trace_printk("son - node scan complete state : free(%lu), umov(%lu), mov(%lu), reclm(%lu), hato(%lu), iso(%lu), inv(%lu) \n", sc.pb_stat[PB_FREE], sc.pb_stat[PB_UNMOVABLE],sc.pb_stat[PB_MOVABLE],sc.pb_stat[PB_RECLAIMABLE],sc.pb_stat[PB_HIGHATOMIC],sc.pb_stat[PB_ISOLATE],sc.pb_stat[PB_INVALID]);
-    }
+    trace_printk("son - node scan complete state : free(%lu), umov(%lu), mov(%lu), reclm(%lu), hato(%lu), iso(%lu), inv(%lu),compact(%lu) \n", sc.pb_stat[PB_FREE], sc.pb_stat[PB_UNMOVABLE],sc.pb_stat[PB_MOVABLE],sc.pb_stat[PB_RECLAIMABLE],sc.pb_stat[PB_HIGHATOMIC],sc.pb_stat[PB_ISOLATE],sc.pb_stat[PB_INVALID],sc.pb_stat[PB_COMPACT]);
 
     pgdat->kscand_status=0;
 

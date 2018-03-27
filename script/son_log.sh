@@ -1,7 +1,7 @@
 #!/bin/bash 
 
 DIR_EXPR=$(pwd)/..
-DIR_DATA=${DIR_EXPR}/data 
+DIR_DATA=${DIR_EXPR}/data/pbusage 
 DIR_FTRACE=/sys/kernel/debug/tracing/ 
 PROC_SCAN_ENABLE=/proc/son/scan_pbstate_enable 
 FILE_DATA=""

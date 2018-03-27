@@ -15,8 +15,8 @@ name_file<-paste(name,".txt",sep="")
 name_result<-paste(name,".png",sep="")
 
 path<-getwd()
-path_file<-paste(path,"/../data/",name_file,sep="")
-path_result<-paste(path,"/plot/",name_result,sep="")
+path_file<-paste(path,"/../data/pbusage/",name_file,sep="")
+path_result<-paste(path,"/plot/pbusage/",name_result,sep="")
 
 #           0      1      2       3         4       5        6     7
 #         free    unmov    mov    recm     hato    iso      inv   compact
@@ -37,9 +37,6 @@ print("done !")
 
 # plotting ...
 print(paste("plotting ",path_result,"..."))
-# png_height= round(3400*height_max/150)
-# if(png_height < 200)
-#     png_height = 200 
 
 #png(path_result, width=3400,height=height_max*10,unit="px")
 png(path_result, width=3400,height=500,unit="px")
@@ -61,15 +58,18 @@ y_pos=0
 index=0
 
 free=umov=mov=reclm=high=iso=inv=0
+
 for( i in data_frame$V1  ){ 
-    if(i == 0)
+
+    if(i == 0){
         y_pos=y_pos+1 
+    }
 
     x_pos=i+1
     color_index=data_frame$V2[index+1]
 
     points(x_pos,y_pos,pch=1,cex=0.5,col=colors[color_index+1])  
-      index=index+1 
+    index=index+1 
 
 }
 

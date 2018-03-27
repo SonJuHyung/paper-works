@@ -1,7 +1,7 @@
 #!/bin/bash 
 
 DIR_EXPR=$(pwd)/.. 
-DIR_DATA=${DIR_EXPR}/data 
+DIR_DATA=${DIR_EXPR}/data/pbusage
 PROC_SCAN_ENABLE=/proc/son/scan_pbstate_enable 
 PROC_DEBUG_ENABLE=/proc/son/debug
 VERSION="" 

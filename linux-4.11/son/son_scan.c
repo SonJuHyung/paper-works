@@ -87,12 +87,6 @@ static int scan_pageblock(struct son_scand_control *sc, unsigned long low_pfn,
 	struct page *page = NULL;
     unsigned long page_type=PB_MAXENTRY, pre_page_type=PB_MAXENTRY;
     
-#if 0
-    int mapcount;
-    int order=-1;
-    int lru=-1;
-    int ref_count=-1;
-#endif
 
 	for (; low_pfn < end_pfn; low_pfn++, (*index)++) {
 
@@ -101,44 +95,6 @@ static int scan_pageblock(struct son_scand_control *sc, unsigned long low_pfn,
 
         page = pfn_to_page(low_pfn);
 
-#if 0
-        if (PageBuddy(page)) {
-            // buddy page 인 경우 
-            //  - struct page 의 _mapcount 가 PAGE_BUDDY_MAPCOUNT_VALUE(-128)
-            //    이라면 buddy 소속의 free page 임
-			unsigned long freepage_order = page_order_unsafe(page);
-            // struct page 의 private field 를 통해 page 로부터 
-            // 연속된 free page 의 order 를 알아옴
-
-			if (freepage_order > 0 && freepage_order < MAX_ORDER)
-				low_pfn += (1UL << freepage_order) - 1;
-            // buddy page 로부터 buddy page 의 order 만큼 skip 하여
-            // buddy page 만큼 건너 뛰고 page 계속 검사 
-			continue;
-        }else{
-            return PB_INUSE;
-        }        
-#endif 
-#if 0
-        order=ref_count=-1;
-        mapcount=lru=0;
-
-        mapcount=page_mapcount(page); 
-        ref_count=page_ref_count(page);            
-   
-        if(PageLRU(page)){
-            lru=1;
-        }
-#endif
-#if 0
-        if(PageBuddy(page) || (!mapcount && !lru && !ref_count)){
-//            page_type = PB_FREE;
-            trace_printk("%lu,%d \n",*index ,PB_FREE);
-            sc->pb_stat[PB_FREE]++;
-
-            continue;
-        }        
-#endif 
         if(!PageLRU(page)){ 
             if(PageIsolated(page)){
                 page_type=PB_ISOLATE;
@@ -168,6 +124,7 @@ static int scan_pageblock(struct son_scand_control *sc, unsigned long low_pfn,
                 page_type = PB_COMPACT;
             }
         }
+
         if(page_type != pre_page_type){
             trace_printk("%lu,%lu \n",*index ,page_type);
         }

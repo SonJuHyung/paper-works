@@ -84,6 +84,8 @@ then
     rm -rf ${FILE_DATA}
 fi
 
+info
+
 while [ ${RUNNING} == 1 ];
 do  
     echo "wakeup and do experiment! - $[COUNT] "
@@ -91,13 +93,14 @@ do
     BEFORE_COMPACT=$(echo $FRAG_CONTEXT | awk '{ split($0,arr," "); print(arr[14]); }')
     if [ ${COMPACT} == 1 ]
     then 
+        echo "compact memory ..."
         echo 1 > ${COMPACT_ENABLE} 
         FRAG_CONTEXT=$(cat ${FILE_SYSFRAG} | grep Normal)
         AFTER_COMPACT=$(echo $FRAG_CONTEXT | awk '{ split($0,arr," "); print(arr[14]); }')
     fi 
+    echo "${COUNT},${BEFORE_COMPACT},${AFTER_COMPACT}"
     echo "${COUNT},${BEFORE_COMPACT},${AFTER_COMPACT}" >> ${FILE_DATA}
 
-    echo "time to sleep for ${SLEEP}"
     sleep ${SLEEP}
     COUNT=`expr ${COUNT} + 1` 
 done 

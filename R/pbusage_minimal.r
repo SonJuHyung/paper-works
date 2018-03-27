@@ -15,13 +15,13 @@ name_file<-paste(name,".txt",sep="")
 name_result<-paste(name,".png",sep="")
 
 path<-getwd()
-path_file<-paste(path,"/../data/",name_file,sep="")
-path_result<-paste(path,"/plot/",name_result,sep="")
+path_file<-paste(path,"/../data/pbusage/",name_file,sep="")
+path_result<-paste(path,"/plot/pbusage/",name_result,sep="")
 
 #           0      1      2       3         4       5        6     7
 #         free    unmov    mov    recm     hato    iso      inv   compact
-colors=c("White","Green","Green","Green","White","white","Gray", "Red")
-#colors=c("White","Red","Green","Yellow","White","white","Gray")
+#colors=c("White","Green","Green","Green","White","white","Gray", "Red")
+colors=c("White","Red","Green","Yellow","White","white","Gray", "Blue")
 
 print("done !");
 
@@ -42,7 +42,7 @@ print(paste("plotting ",path_result,"..."))
 #     png_height = 200 
 
 #png(path_result, width=3400,height=height_max*10,unit="px")
-png(path_result, width=3400,height=500,unit="px")
+png(path_result, width=3400*2,height=500*2,unit="px")
 
 par(mar=c(10,5,3,3)) # default : c(5.1, 4.1, 4.1, 2.1) / margin : down, left, up, right
 par(mgp=c(6,2,0)) # default : c(3,1,0) / position : title, line label, line
@@ -68,10 +68,13 @@ cur_state=-1
 j=0
 index=1
 
-temp=0
+count=0 
 for( i in data_frame$V1  ){ 
     if(i == 0){
+        print(paste(count," th try is done. ",sep=""))
+        count=count+1
         cur_x=0
+#        i=1
         y_pos=y_pos+1 
     }
 
@@ -80,7 +83,7 @@ for( i in data_frame$V1  ){
 
     if(pre_x == (width_max-512)){
         for(j in (pre_x):(pre_x+512)){
-            print(paste(j+1,",",y_pos-1,",",pre_state+1,",son",sep=""))
+#            print(paste(j+1,",",y_pos-1,",",pre_state+1,",son",sep=""))
             points(j+1,y_pos-1,pch=1,cex=0.5,col=colors[pre_state+1])  
         }
         pre_x=0
@@ -88,7 +91,7 @@ for( i in data_frame$V1  ){
 
     if(pre_x != cur_x){
         for(j in (pre_x):(cur_x-1)){
-            print(paste(j+1,",",y_pos,",",pre_state+1,",son",sep=""))
+#            print(paste(j+1,",",y_pos,",",pre_state+1,",son",sep=""))
             points(j+1,y_pos,pch=1,cex=0.5,col=colors[pre_state+1])  
         }
     }
@@ -100,7 +103,7 @@ for( i in data_frame$V1  ){
 
 if(pre_x == (width_max-512)){
     for(j in (pre_x):(pre_x+512)){        
-        print(paste(j+1,",",y_pos,",",pre_state+1,",son",sep=""))
+#        print(paste(j+1,",",y_pos,",",pre_state+1,",son",sep=""))
         points(j+1,y_pos,pch=1,cex=0.5,col=colors[pre_state+1])  
     }
     pre_x=0

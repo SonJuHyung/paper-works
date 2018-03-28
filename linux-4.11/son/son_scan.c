@@ -124,10 +124,15 @@ static int scan_pageblock(struct son_scand_control *sc, unsigned long low_pfn,
                 page_type = PB_COMPACT;
             }
         }
-
+#if 1
         if(page_type != pre_page_type){
             trace_printk("%lu,%lu \n",*index ,page_type);
         }
+#endif 
+#if 0
+        trace_printk("%lu,%lu \n",*index ,page_type);
+#endif
+
         sc->pb_stat[page_type]++;
         pre_page_type = page_type;
 

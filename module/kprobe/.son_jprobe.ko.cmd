@@ -1,1 +1,0 @@
-cmd_/home/son/workspace/git/paper_work/module/kprobe/son_jprobe.ko := ld -r -m elf_x86_64 -T ./scripts/module-common.lds --build-id  -o /home/son/workspace/git/paper_work/module/kprobe/son_jprobe.ko /home/son/workspace/git/paper_work/module/kprobe/son_jprobe.o /home/son/workspace/git/paper_work/module/kprobe/son_jprobe.mod.o ;  true

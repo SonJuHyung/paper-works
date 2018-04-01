@@ -90,7 +90,8 @@ for( i in data_frame$V1  ){
     cur_state=data_frame$V2[index]
 
     if(pre_x == (width_max-512)){
-        if(pre_state == 1 || pre_state == 2 || pre_state == 3){
+#        if(pre_state == 1 || pre_state == 2 || pre_state == 3){
+        if(pre_state == 1 || pre_state == 2 || pre_state == 3 || pre_state == 7){
             for(j in (pre_x):(pre_x+512)){
                 #            print(paste(j+1,",",y_pos-1,",",pre_state+1,",son",sep=""))            
                 points(j+1,y_pos-1,pch=point_pch,cex=point_cex,col=colors[pre_state+1])  
@@ -100,7 +101,8 @@ for( i in data_frame$V1  ){
     }
 
     if(pre_x != cur_x){
-        if(pre_state == 1 || pre_state == 2 || pre_state == 3){
+#        if(pre_state == 1 || pre_state == 2 || pre_state == 3){
+        if(pre_state == 1 || pre_state == 2 || pre_state == 3 || pre_state == 7){
             for(j in (pre_x):(cur_x-1)){
                 #            print(paste(j+1,",",y_pos,",",pre_state+1,",son",sep=""))
                 points(j+1,y_pos,pch=point_pch,cex=point_cex,col=colors[pre_state+1])  
@@ -114,7 +116,8 @@ for( i in data_frame$V1  ){
 }
 
 if(pre_x == (width_max-512)){
-    if(pre_state == 1 || pre_state == 2 || pre_state == 3){
+#    if(pre_state == 1 || pre_state == 2 || pre_state == 3){
+    if(pre_state == 1 || pre_state == 2 || pre_state == 3 || pre_state == 7){
         for(j in (pre_x):(pre_x+512)){        
             #        print(paste(j+1,",",y_pos,",",pre_state+1,",son",sep=""))
             points(j+1,y_pos,pch=point_pch,cex=point_cex,col=colors[pre_state+1])  

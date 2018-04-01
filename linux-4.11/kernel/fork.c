@@ -898,6 +898,7 @@ static inline void __mmput(struct mm_struct *mm)
 /*
  * Decrement the use count and release all resources for an mm.
  */
+// user process 가 종료될 때.
 void mmput(struct mm_struct *mm)
 {
 	might_sleep();

@@ -4,6 +4,35 @@
 #include <linux/mmzone.h>
 #include <linux/vmstat.h>
 #include <linux/list.h>
+#include <linux/sched.h>
+#include <linux/types.h>
+
+#define TARGET_PID 2649
+
+//const char* workload = "redis-server";
+const char* workload = "mongod";
+
+struct page *
+son__alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order,
+			struct zonelist *zonelist, nodemask_t *nodemask)
+{
+	struct task_struct *tsk_cur = current;
+    int pid_cur=0;
+
+    if(tsk_cur){
+        if(!strcmp(tsk_cur->comm,workload)){
+            pid_cur=tsk_cur->pid;
+            trace_printk("pid_cur:%d, cur_name:%s, order:%d \n", pid_cur, tsk_cur->comm, order);
+        }
+    }
+        
+#if 0
+    if(pid_cur == TARGET_PID)
+        trace_printk("pid_cur:%d, pid_par:%d, order:%d \n",pid_cur,pid_par,order);
+#endif 
+
+    jprobe_return();
+}
 
 void son_wakeup_kcompactd(pg_data_t *pgdat, int order, int classzone_idx)
 {
@@ -55,9 +84,12 @@ void son_wakeup_kcompactd(pg_data_t *pgdat, int order, int classzone_idx)
 }
 
 static struct jprobe son_jprobe = {
-	.entry			= son_wakeup_kcompactd,
+//	.entry			= son_wakeup_kcompactd,
+	.entry			= son__alloc_pages_nodemask,
 	.kp = {
-		.symbol_name	= "wakeup_kcompactd",
+//		.symbol_name	= "wakeup_kcompactd",
+		.symbol_name	= "__alloc_pages_nodemask",
+
 	},
 };
 

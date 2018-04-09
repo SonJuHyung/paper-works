@@ -1,6 +1,6 @@
 KERNELDIR=/lib/modules/$(shell uname -r)/build
 
-obj-m += son_jprobe.o
+obj-m += son_probe.o
 
 default:$(TARGETS)
 	$(MAKE) -C $(KERNELDIR) SUBDIRS=$(PWD) modules

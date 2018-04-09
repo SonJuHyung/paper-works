@@ -47,10 +47,10 @@ handler(){
 # usage function
 usage()
 {
-    echo "  usage : # ./son_ftrace_func.sh -f __alloc_pages_slowpath -w redis-server -p redis -v v1"   
-    echo "        : # ./son_ftrace_func.sh -f __mmput -w mongodb -p mongod -v v2"
-    echo "        : # ./son_ftrace_func.sh -w redis -p redis-server -e -v v1"
-    echo "        : # ./son_ftrace_func.sh -l"
+    echo "  usage : # ./son_ftrace.sh -f __alloc_pages_slowpath -w redis -p redis-server -v v1"   
+    echo "        : # ./son_ftrace.sh -f __mmput -w mongodb -p mongod -v v2"
+    echo "        : # ./son_ftrace.sh -w redis -p redis-server -e -v v1"
+    echo "        : # ./son_ftrace.sh -l"
     echo ""
 }
 
@@ -74,7 +74,7 @@ do
             echo "  expr workload      : ${WORKLOAD}"
             ;;
         p)
-            FTRACE_PID=$(pgrep ${OPTARG})
+            $(pgrep ${OPTARG} > /dev/null)
             if [ $? != 0 ]
             then 
                 echo "  error : ${OPTARG} process doesn't exist" 
@@ -82,12 +82,13 @@ do
                 usage 
                 exit 0
             else 
+                FTRACE_PID=${OPTARG}
                 echo "  workload pid       : ${FTRACE_PID}"
             fi
             ;;
 
         f)
-            FTRACE_FUNC_TARGET=$(cat ${DIR_FTRACE}/available_filter_functions | grep ${OPTARG})
+            $(cat ${DIR_FTRACE}/available_filter_functions | grep ${OPTARG} > /dev/null)
             if [ $? != 0 ]                               
             then                
                 echo "  error : ${FTRACE_FUNC_TARGET} function doesn't exist in available tracer" 
@@ -95,6 +96,7 @@ do
                 usage
                 exit 0                
             else 
+                FTRACE_FUNC_TARGET=${OPTARG}
                 echo "  target func        : ${FTRACE_FUNC_TARGET}"
             fi
             ;;
@@ -189,6 +191,8 @@ then
     echo "  start logging to ${FILE_DATA}"
     cat ${DIR_FTRACE}/trace_pipe > ${FILE_DATA} 
 
+#    cat $1 | awk '{ split($0,parse1,":"); funcname=parse1[2]; split(parse1[3],parse2," "); split(parse2[2],_pfn,"="); pfn=_pfn[2]; split(parse2[3],_order,"="); order=_order[2]; split(parse2[4],_mtype,"="); mtype=_mtype[2]; printf("%s,%s,%s\n",funcname,pfn,order,mtype);  }'
+
 else
 
     if [ ${FTRACE_LS} == 1 ]
@@ -211,25 +215,23 @@ else
 
     # ftrace function tracing 
     ftrace_func_unset(){
-        echo ""
         echo "  unsetting ftrace func tracing parameters..."
-        echo ""
         echo ${FTRACE_OFF} > ${DIR_FTRACE}/tracing_on 
         echo ${FTRACE_FUNC_OFF} > ${DIR_FTRACE}/current_tracer
         echo > ${DIR_FTRACE}/set_ftrace_filter 
         echo > ${DIR_FTRACE}/set_ftrace_pid
         echo > ${DIR_FTRACE}/trace   
+        echo "  done!"
     }
 
     ftrace_func_set(){
-        echo ""
         echo "  setting ftrace func tracing parameters..."
-        echo ""
         echo > ${DIR_FTRACE}/trace   
         echo ${FTRACE_PID} > ${DIR_FTRACE}/set_ftrace_pid
         echo ${FTRACE_FUNC_TARGET} > ${DIR_FTRACE}/set_ftrace_filter 
         echo ${FTRACE_FUNC_ON} > ${DIR_FTRACE}/current_tracer
         echo ${FTRACE_ON} > ${DIR_FTRACE}/tracing_on    
+        echo "  done!"
     }
 
     FILE_DATA=${DIR_DATA}/${FTRACE_MODE_NAME[${FTRACE_MODE}]}/ftrace_raw_${FTRACE_MODE_NAME[${FTRACE_MODE}]}_result_${FTRACE_FUNC_TARGET}_${WORKLOAD}_${VERSION}.txt 
@@ -242,7 +244,6 @@ else
 
     echo "  start logging to ${FILE_DATA}"
     cat ${DIR_FTRACE}/trace_pipe > ${FILE_DATA} 
-
 fi
 
 

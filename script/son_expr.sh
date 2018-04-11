@@ -34,8 +34,8 @@ handler(){
 usage()
 {
     echo ""
-    echo "  usage : # ./expr.sh -s 10s -t v1 -w redis"   
-    echo "        : # ./expr.sh -s 1m -d -t v2 -w 429mcf"
+    echo "  usage : # ./son_expr.sh -s 10s -t v1 -w redis"   
+    echo "        : # ./son_expr.sh -s 1m -d -t v2 -w 429mcf"
     echo ""
 }
 

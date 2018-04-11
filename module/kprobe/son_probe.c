@@ -10,7 +10,8 @@
 #define TARGET_PID 2649
 
 //const char* workload = "redis-server";
-const char* workload = "mongod";
+//const char* workload = "mongod";
+const char* workload = "java";
 
 struct page *
 son__alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order,
@@ -18,19 +19,23 @@ son__alloc_pages_nodemask(gfp_t gfp_mask, unsigned int order,
 {
 	struct task_struct *tsk_cur = current;
     int pid_cur=0;
-
+#if 0
+    pid_cur=tsk_cur->pid;
+    struct task_struct *tsk_par = current->parent;
+    int pid_par=tsk_par->pid;
+#endif
+#if 1
     if(tsk_cur){
         if(!strcmp(tsk_cur->comm,workload)){
             pid_cur=tsk_cur->pid;
             trace_printk("pid_cur:%d, cur_name:%s, order:%d \n", pid_cur, tsk_cur->comm, order);
         }
     }
-        
+#endif        
 #if 0
-    if(pid_cur == TARGET_PID)
-        trace_printk("pid_cur:%d, pid_par:%d, order:%d \n",pid_cur,pid_par,order);
-#endif 
-
+    if(!strcmp(tsk_cur->comm,workload))
+        trace_printk("pid_cur:%d, cur_name:%s, pid_par:%d, par_name:%s, order:%d \n",pid_cur,tsk_cur->comm,pid_par,tsk_par->comm,order);
+#endif
     jprobe_return();
 }
 

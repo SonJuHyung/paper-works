@@ -100,6 +100,9 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/task.h>
 
+#ifdef CONFIG_SON
+#include <son/son.h>
+#endif
 /*
  * Minimum number of threads to boot the kernel
  */
@@ -791,7 +794,11 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p,
 #endif
 
 #ifdef CONFIG_SON 
-    INIT_LIST_HEAD(&mm->son_scan_link);
+    INIT_LIST_HEAD(&mm->son_scand_refcount_link);
+    mm->son_mm_scand_stats.total_hpage_count=0;
+    mm->son_mm_scand_stats.total_bpage_count=0;
+    mm->son_mm_scand_stats.idle_hpage_count=0;
+    mm->son_mm_scand_stats.idle_bpage_count=0;
 #endif
 	if (current->mm) {
 		mm->flags = current->mm->flags & MMF_INIT_MASK;
@@ -881,6 +888,9 @@ static inline void __mmput(struct mm_struct *mm)
 	exit_aio(mm);
 	ksm_exit(mm);
 	khugepaged_exit(mm); /* must run before exit_mmap */
+#ifdef CONFIG_SON 
+    son_kthread_refcount_del_entry(mm);
+#endif
 	exit_mmap(mm);
 	mm_put_huge_zero_page(mm);
 	set_mm_exe_file(mm, NULL);

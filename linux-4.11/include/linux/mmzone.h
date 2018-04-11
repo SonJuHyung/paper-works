@@ -19,6 +19,10 @@
 #include <linux/atomic.h>
 #include <asm/page.h>
 
+#ifdef CONFIG_SON 
+#include <son/son.h>
+#endif
+
 /* Free memory management - zoned buddy allocator.  */
 #ifndef CONFIG_FORCE_MAX_ZONEORDER
 #define MAX_ORDER 11
@@ -695,8 +699,9 @@ typedef struct pglist_data {
 	struct per_cpu_nodestat __percpu *per_cpu_nodestats;
 	atomic_long_t		vm_stat[NR_VM_NODE_STAT_ITEMS]; 
 #ifdef CONFIG_SON
-    struct task_struct *kscand;
-    int kscand_status;
+    struct task_struct *kscand_pbstate;
+    struct task_struct *kscand_refcount;
+    struct son_scand_refcount_stats son_node_scand_stats;
 #endif
 } pg_data_t;
 

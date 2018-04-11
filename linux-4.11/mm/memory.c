@@ -77,6 +77,12 @@
 #include <asm/tlbflush.h>
 #include <asm/pgtable.h>
 
+
+#ifdef CONFIG_SON 
+#include <son/son.h>
+#endif
+
+
 #include "internal.h"
 
 #ifdef LAST_CPUPID_NOT_IN_PAGE_FLAGS
@@ -3811,32 +3817,51 @@ static int __handle_mm_fault(struct vm_area_struct *vma, unsigned long address,
 		}
 	}
 
-	vmf.pmd = pmd_alloc(mm, vmf.pud, address);
-	if (!vmf.pmd)
-		return VM_FAULT_OOM;
-	if (pmd_none(*vmf.pmd) && transparent_hugepage_enabled(vma)) {
-		ret = create_huge_pmd(&vmf);
-		if (!(ret & VM_FAULT_FALLBACK))
-			return ret;
-	} else {
-		pmd_t orig_pmd = *vmf.pmd;
+    vmf.pmd = pmd_alloc(mm, vmf.pud, address);
+    if (!vmf.pmd)
+        return VM_FAULT_OOM;
+    if (pmd_none(*vmf.pmd) && transparent_hugepage_enabled(vma)) {
+        ret = create_huge_pmd(&vmf);
+#ifdef CONFIG_SON
+        if (!(ret & VM_FAULT_FALLBACK)){
+            if(mm && atomic_read(&mm->mm_users) && list_empty(&mm->son_scand_refcount_link)){
+                son_kthread_refcount_add_entry(mm);
+            }
+            return ret;
+        }
+#else
+        if (!(ret & VM_FAULT_FALLBACK)){
+            return ret;
+        }
 
-		barrier();
-		if (pmd_trans_huge(orig_pmd) || pmd_devmap(orig_pmd)) {
-			if (pmd_protnone(orig_pmd) && vma_is_accessible(vma))
-				return do_huge_pmd_numa_page(&vmf, orig_pmd);
+#endif
+    } else {
 
-			if ((vmf.flags & FAULT_FLAG_WRITE) &&
-					!pmd_write(orig_pmd)) {
-				ret = wp_huge_pmd(&vmf, orig_pmd);
-				if (!(ret & VM_FAULT_FALLBACK))
-					return ret;
-			} else {
-				huge_pmd_set_accessed(&vmf, orig_pmd);
-				return 0;
-			}
-		}
-	}
+        pmd_t orig_pmd = *vmf.pmd;
+
+        barrier();
+        if (pmd_trans_huge(orig_pmd) || pmd_devmap(orig_pmd)) {
+            if (pmd_protnone(orig_pmd) && vma_is_accessible(vma))
+                return do_huge_pmd_numa_page(&vmf, orig_pmd);
+
+            if ((vmf.flags & FAULT_FLAG_WRITE) &&
+                    !pmd_write(orig_pmd)) {
+                ret = wp_huge_pmd(&vmf, orig_pmd);
+                if (!(ret & VM_FAULT_FALLBACK))
+                    return ret;
+            } else {
+                huge_pmd_set_accessed(&vmf, orig_pmd);
+                return 0;
+            }
+        }
+    }
+
+#ifdef CONFIG_SON 
+    if(mm && atomic_read(&mm->mm_users) && list_empty(&mm->son_scand_refcount_link)){
+        son_kthread_refcount_add_entry(mm);
+    }
+#endif
+
 
 	return handle_pte_fault(&vmf);
 }

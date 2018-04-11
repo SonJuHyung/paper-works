@@ -16,6 +16,10 @@
 
 #include <asm/mmu.h>
 
+#ifdef CONFIG_SON 
+#include <son/son.h>
+#endif
+
 #ifndef AT_VECTOR_SIZE_ARCH
 #define AT_VECTOR_SIZE_ARCH 0
 #endif
@@ -23,6 +27,22 @@
 
 struct address_space;
 struct mem_cgroup;
+
+#ifdef CONFIG_SON
+
+#define FREQ_BITMAP_SIZE 8
+#define PRI_HISTORY_SIZE 3
+
+/* structure for tracking temporal utilization */
+typedef struct son_page_utilmap_node {
+	struct list_head link;
+    DECLARE_BITMAP(freq_bitmap, FREQ_BITMAP_SIZE);
+    // page 마다 8 bit 만큼의 bitmap 생성
+	unsigned long addr;
+	struct page *page;
+} page_utilmap_t;
+#endif
+
 
 /*
  * Each physical page in the system has a struct page associated with
@@ -215,6 +235,7 @@ struct page {
 
 #ifdef CONFIG_SON
 	int son_compact_target;
+    page_utilmap_t page_util_info;
 #endif
 
 #ifdef LAST_CPUPID_NOT_IN_PAGE_FLAGS
@@ -360,6 +381,7 @@ struct core_state {
 };
 
 struct kioctx_table;
+
 struct mm_struct {
 	struct vm_area_struct *mmap;		/* list of VMAs */
 	struct rb_root mm_rb;
@@ -500,7 +522,8 @@ struct mm_struct {
 #endif
 	struct work_struct async_put_work; 
 #ifdef CONFIG_SON
-    struct list_head son_scan_link;
+    struct list_head son_scand_refcount_link;
+	struct son_scand_refcount_stats son_mm_scand_stats;
 #endif
 };
 

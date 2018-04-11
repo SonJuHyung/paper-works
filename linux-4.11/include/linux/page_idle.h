@@ -7,7 +7,17 @@
 
 #ifdef CONFIG_IDLE_PAGE_TRACKING
 
-#ifdef CONFIG_64BIT
+#ifdef CONFIG_64BIT 
+
+#ifdef CONFIG_SON 
+extern struct page *page_idle_get_page(unsigned long pfn);
+extern int page_idle_clear_pte_refs_one(struct page *page,
+					struct vm_area_struct *vma,
+					unsigned long addr, void *arg);
+extern void page_idle_clear_pte_refs(struct page *page);
+#endif
+
+
 static inline bool page_is_young(struct page *page)
 {
 	return PageYoung(page);
@@ -135,5 +145,6 @@ static inline void clear_page_idle(struct page *page)
 }
 
 #endif /* CONFIG_IDLE_PAGE_TRACKING */
+
 
 #endif /* _LINUX_MM_PAGE_IDLE_H */

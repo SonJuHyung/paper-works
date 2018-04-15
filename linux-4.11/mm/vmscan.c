@@ -3476,8 +3476,11 @@ kswapd_try_sleep:
 		trace_mm_vmscan_kswapd_wake(pgdat->node_id, classzone_idx,
 						alloc_order);
 		reclaim_order = balance_pgdat(pgdat, alloc_order, classzone_idx);
-		if (reclaim_order < alloc_order)
+		if (reclaim_order < alloc_order){
+//            trace_printk("son_kswapd(v1) alloc_order : %u, reclaim_order : %u, pgdat->kswapd_order : %u \n",alloc_order, reclaim_order, pgdat->kswapd_order);
 			goto kswapd_try_sleep;
+        }
+//        trace_printk("son_kswapd(v2) alloc_order : %u, reclaim_order : %u, pgdat->kdswapd_order : %u \n",alloc_order, reclaim_order, pgdat->kswapd_order);
 
 		alloc_order = reclaim_order = pgdat->kswapd_order;
 		classzone_idx = pgdat->kswapd_classzone_idx;

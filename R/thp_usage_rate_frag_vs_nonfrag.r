@@ -1,4 +1,8 @@
 #!/usr/bin/env Rscript 
+#
+# huge page usage percent in fragmented vs non-fragmented environment
+# host THP rate, guest THP rate
+#
 
 # parsing command line 
 print("setting argument ...");

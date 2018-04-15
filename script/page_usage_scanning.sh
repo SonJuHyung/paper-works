@@ -84,7 +84,7 @@ fi
 
 echo "increase buffer size to ${FTRACE_BUFSIZE}"
 #echo ${FTRACE_BUFSIZE} > ${DIR_FTRACE}/buffer_size_kb
-./son_log.sh -t $VERSION -w $WORKLOAD &
+./page_usage_scanning.sh -t $VERSION -w $WORKLOAD &
 
 while [ ${RUNNING} == 1 ];
 do  

@@ -102,9 +102,10 @@ static int son_scand_pbstate_check(void)
 static int scan_pageblock(struct son_scand_control *sc, unsigned long low_pfn,
         unsigned long end_pfn, unsigned long *index)
 {
+// verisno 1 - page usage scanning detail
+#if 0
 	struct page *page = NULL;
     unsigned long page_type=PB_MAXENTRY, pre_page_type=PB_MAXENTRY;
-    
 
 	for (; low_pfn < end_pfn; low_pfn++, (*index)++) {
 
@@ -143,14 +144,72 @@ static int scan_pageblock(struct son_scand_control *sc, unsigned long low_pfn,
             }
         }
 
-        if(page_type != pre_page_type){
-            trace_printk("son_pbscand,%lu,%lu \n",*index ,page_type);
+        if(page->son_compact_target){
+            page->son_compact_target=0;
+            page_type = PB_COMPACT;
         }
+
+
+        if(page_type != pre_page_type)
+            trace_printk("son_pbscand,%lu,%lu,%lu \n",*index,page_type,low_pfn);
+
+        sc->pb_stat[page_type]++;
+        pre_page_type = page_type;
+    }
+#endif
+
+// verrsion 2 - page usage scanning just LRU and free
+#if 0
+	struct page *page = NULL;
+    unsigned long page_type=PB_MAXENTRY, pre_page_type=PB_MAXENTRY;
+	for (; low_pfn < end_pfn; low_pfn++, (*index)++) {
+
+        if(!pfn_valid_within(low_pfn))
+            continue;
+
+        page = pfn_to_page(low_pfn);
+
+        if(PageLRU(page)){ 
+            if(PageActive(page))
+                page_type=PB_ACTIVE;
+            else
+                page_type=PB_INACTIVE;
+        }else{
+            page_type=PB_FREE;
+        }
+
+        if(page->son_compact_target){
+            page->son_compact_target=0;
+        }
+
+        if(page_type != pre_page_type)
+            trace_printk("son_pbscand,%lu,%lu,%lu \n",*index,page_type,low_pfn);
 
         sc->pb_stat[page_type]++;
         pre_page_type = page_type;
 
     }
+#endif 
+
+// verrsion 3 - page block scanning by used percentage
+#if 1
+	struct page *page = NULL;
+    int used_pages=0, used_percentage=0;
+
+	for (; low_pfn < end_pfn; low_pfn++) {
+
+        if(!pfn_valid_within(low_pfn))
+            continue;
+
+        page = pfn_to_page(low_pfn);
+        if(PageLRU(page)){ 
+            used_pages++;
+        }
+    }
+#endif
+    (*index)++;  
+    used_percentage=used_pages*10/512;
+    trace_printk("son_pbscand,%lu,%lu,%d \n",*index,low_pfn,used_percentage);
 
     return 0;
 }
@@ -224,12 +283,14 @@ static int son_scand_pbstate_do_work(pg_data_t *pgdat)
         scan_zone(zone, &sc, &index); 
 
         if(atomic_read(&son_debug_enable)){
-            trace_printk("son_pbscand - zone scan complete state : free(%lu), umov(%lu), mov(%lu), reclm(%lu), hato(%lu), iso(%lu), inv(%lu) \n", sc.pb_stat[PB_FREE], sc.pb_stat[PB_UNMOVABLE],sc.pb_stat[PB_MOVABLE],sc.pb_stat[PB_RECLAIMABLE],sc.pb_stat[PB_HIGHATOMIC],sc.pb_stat[PB_ISOLATE],sc.pb_stat[PB_INVALID]);
+//            trace_printk("son_pbscand - zone scan complete state : free(%lu), umov(%lu), mov(%lu), reclm(%lu), hato(%lu), iso(%lu), inv(%lu) \n", sc.pb_stat[PB_FREE], sc.pb_stat[PB_UNMOVABLE],sc.pb_stat[PB_MOVABLE],sc.pb_stat[PB_RECLAIMABLE],sc.pb_stat[PB_HIGHATOMIC],sc.pb_stat[PB_ISOLATE],sc.pb_stat[PB_INVALID]);
+            trace_printk("son_pbscand_comple,free(%lu),inactive(%lu),active(%lu) \n", sc.pb_stat[PB_FREE], sc.pb_stat[PB_INACTIVE],sc.pb_stat[PB_ACTIVE]);
         }
 
     }
 
-    trace_printk("son_pbscand - node scan complete state : free(%lu), umov(%lu), mov(%lu), reclm(%lu), hato(%lu), iso(%lu), inv(%lu),compact(%lu) \n", sc.pb_stat[PB_FREE], sc.pb_stat[PB_UNMOVABLE],sc.pb_stat[PB_MOVABLE],sc.pb_stat[PB_RECLAIMABLE],sc.pb_stat[PB_HIGHATOMIC],sc.pb_stat[PB_ISOLATE],sc.pb_stat[PB_INVALID],sc.pb_stat[PB_COMPACT]);
+//    trace_printk("son_pbscand_comple,free(%lu), umov(%lu), mov(%lu), reclm(%lu), hato(%lu), iso(%lu), inv(%lu),compact(%lu) \n", sc.pb_stat[PB_FREE], sc.pb_stat[PB_UNMOVABLE],sc.pb_stat[PB_MOVABLE],sc.pb_stat[PB_RECLAIMABLE],sc.pb_stat[PB_HIGHATOMIC],sc.pb_stat[PB_ISOLATE],sc.pb_stat[PB_INVALID],sc.pb_stat[PB_COMPACT]);
+    trace_printk("son_pbscand_comple,%lu,%lu,%lu \n", sc.pb_stat[PB_FREE], sc.pb_stat[PB_INACTIVE],sc.pb_stat[PB_ACTIVE]);
 
     return 0;
 }

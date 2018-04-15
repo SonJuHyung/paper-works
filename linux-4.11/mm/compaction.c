@@ -21,6 +21,7 @@
 #include <linux/kthread.h>
 #include <linux/freezer.h>
 #include <linux/page_owner.h>
+#include <linux/vmstat.h>
 #include "internal.h"
 
 #ifdef CONFIG_COMPACTION
@@ -866,7 +867,7 @@ isolate_success:
 		cc->nr_migratepages++;
 		nr_isolated++;
 #ifdef CONFIG_SON  
-        page->son_compact_target=1;
+        page->son_compact_target=0;
 #endif
 
 		/*
@@ -1372,18 +1373,26 @@ static enum compact_result __compaction_suitable(struct zone *zone, int order,
 					unsigned long wmark_target)
 {
 	unsigned long watermark;
+    // trace_printk("   -> __compaction_suitable, check 1 : from sysfs ? \n");
 
 	if (is_via_compact_memory(order))
 		return COMPACT_CONTINUE;
+    // trace_printk("   -> __compaction_suitable, check 1 : from sysfs ?-> pass \n");
 
 	watermark = zone->watermark[alloc_flags & ALLOC_WMARK_MASK];
 	/*
 	 * If watermarks for high-order allocation are already met, there
 	 * should be no need for compaction at all.
 	 */
+
+    // trace_printk("   -> __compaction_suitable, check 2 : free-2^order < wmark ? || no contig ? \n");
 	if (zone_watermark_ok(zone, order, watermark, classzone_idx,
-								alloc_flags))
+								alloc_flags)){
+        // trace_printk("   -> __compaction_suitable, check 2 : free-2^order < wmark ? || no contig ? -> fail \n");
+
 		return COMPACT_SUCCESS;
+    }
+    // trace_printk("   -> __compaction_suitable, check 2 : free-2^order < wmark ? || no contig ? -> pass \n");
 
 	/*
 	 * Watermarks for order-0 must be met for compaction to be able to
@@ -1402,9 +1411,14 @@ static enum compact_result __compaction_suitable(struct zone *zone, int order,
 	watermark = (order > PAGE_ALLOC_COSTLY_ORDER) ?
 				low_wmark_pages(zone) : min_wmark_pages(zone);
 	watermark += compact_gap(order);
+    // trace_printk("   -> __compaction_suitable, check 3 : free-1 < wmark(order>3 ? low:min)+2^order*2  \n");
+
 	if (!__zone_watermark_ok(zone, 0, watermark, classzone_idx,
-						ALLOC_CMA, wmark_target))
+						ALLOC_CMA, wmark_target)){
+        // trace_printk("   -> __compaction_suitable, check 3 : free-1 < wmark(order>3 ? low:min)+2^order*2 -> fail  \n");
 		return COMPACT_SKIPPED;
+    }
+    // trace_printk("   -> __compaction_suitable, check 3 : free-1 < wmark(order>3 ? low:min)+2^order*2 -> pass  \n");
 
 	return COMPACT_CONTINUE;
 }
@@ -1416,8 +1430,11 @@ enum compact_result compaction_suitable(struct zone *zone, int order,
 	enum compact_result ret;
 	int fragindex;
 
+    // trace_printk("  -> compaction_suitable, check 1 : suitable ? \n");
 	ret = __compaction_suitable(zone, order, alloc_flags, classzone_idx,
 				    zone_page_state(zone, NR_FREE_PAGES));
+    // trace_printk("  -> compaction_suitable, check 1 : suitable ? -> pass %d\n",ret);
+
 	/*
 	 * fragmentation index determines if allocation failures are due to
 	 * low memory or external fragmentation
@@ -1434,11 +1451,17 @@ enum compact_result compaction_suitable(struct zone *zone, int order,
 	 * excessive compaction for costly orders, but it should not be at the
 	 * expense of system stability.
 	 */
+    // trace_printk("  -> compaction_suitable, check 2 : frag index < 500 (order>3) ? \n");
+
 	if (ret == COMPACT_CONTINUE && (order > PAGE_ALLOC_COSTLY_ORDER)) {
+
 		fragindex = fragmentation_index(zone, order);
 		if (fragindex >= 0 && fragindex <= sysctl_extfrag_threshold)
 			ret = COMPACT_NOT_SUITABLE_ZONE;
+        // trace_printk("  -> compaction_suitable, check 2 : frag index < 500 (order>3) ? -> fail %d, %d \n",fragindex,ret);
+
 	}
+    // trace_printk("  -> compaction_suitable, check 2 : frag index < 500 (order>3) ? -> pass \n");
 
 	trace_mm_compaction_suitable(zone, order, ret);
 	if (ret == COMPACT_NOT_SUITABLE_ZONE)
@@ -1876,10 +1899,18 @@ static bool kcompactd_node_suitable(pg_data_t *pgdat)
 		if (!populated_zone(zone))
 			continue;
 
+        // trace_printk(" -> kcompactd_node_suitable, check 1 : suitable ? \n");
 		if (compaction_suitable(zone, pgdat->kcompactd_max_order, 0,
-					classzone_idx) == COMPACT_CONTINUE)
+					classzone_idx) == COMPACT_CONTINUE){
+            // trace_printk(" -> kcompactd_node_suitable, check 1 : suitable ? -> success COMPACT_CONTINUE \n");
+
 			return true;
-	}
+        }else{
+            // trace_printk(" -> kcompactd_node_suitable, check 1 : suitable ? -> failt COMPACT_SKIPPED or SUCCESS \n");
+ 
+
+        }
+    }
 
 	return false;
 }
@@ -1964,8 +1995,14 @@ static void kcompactd_do_work(pg_data_t *pgdat)
 
 void wakeup_kcompactd(pg_data_t *pgdat, int order, int classzone_idx)
 {
-	if (!order)
+    trace_printk("etc,wakeup_kcompactd, check 1 : order-0 ? %d \n",order);
+
+	if (!order){
+        trace_printk("etc,wakeup_kcompactd, check 1 : order-0 ? %d -> fail(free : %lu) \n",order,global_page_state(NR_FREE_PAGES));
+
 		return;
+    }
+    // trace_printk("wakeup_kcompactd, check 1 : order-0 ? -> pass %d \n",order);
 
 	if (pgdat->kcompactd_max_order < order)
 		pgdat->kcompactd_max_order = order;
@@ -1979,12 +2016,17 @@ void wakeup_kcompactd(pg_data_t *pgdat, int order, int classzone_idx)
 
 	if (pgdat->kcompactd_classzone_idx > classzone_idx)
 		pgdat->kcompactd_classzone_idx = classzone_idx;
-
+    // trace_printk("wakeup_kcompactd, check 2 : active waitqueue ? \n");
 	if (!waitqueue_active(&pgdat->kcompactd_wait))
 		return;
+    // trace_printk("wakeup_kcompactd, check 2 : active waitqueue -> pass \n");
 
-	if (!kcompactd_node_suitable(pgdat))
+    // trace_printk("wakeup_kcompactd, check 3 : suitable ? \n");
+	if (!kcompactd_node_suitable(pgdat)){
+        // trace_printk("wakeup_kcompactd, check 3 : suitable -> fail COMPACT_SKIPPED or SUCCESS \n");
 		return;
+    }
+    // trace_printk("wakeup_kcompactd, check 3 : suitable -> pass \n");
 
 	trace_mm_compaction_wakeup_kcompactd(pgdat->node_id, order,
 							classzone_idx);

@@ -18,8 +18,9 @@ extern wait_queue_head_t son_scand_refcount_wait;
 
 typedef enum {
 	PB_FREE,                    // 0
-    PB_INUSE,                   // 1
-    PB_UNMOVABLE = PB_INUSE,    // 1
+    PB_ACTIVE,                  // 1
+    PB_INACTIVE,                // 2
+    PB_UNMOVABLE = PB_ACTIVE,   // 1
     PB_MOVABLE,                 // 2
     PB_RECLAIMABLE,             // 3
     PB_HIGHATOMIC,              // 4

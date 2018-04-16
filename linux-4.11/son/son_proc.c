@@ -67,26 +67,26 @@ static ssize_t son_write_pbstate_enable(struct file *filep,
                 /* if current scanning state is not enabled make it enabled*/
                 atomic_set(&son_scan_pbstate_enable,SON_ENABLE);
                 wake_up_interruptible(&son_scand_pbstate_wait);
-                if(atomic_read(&son_debug_enable)){
-                    trace_printk("son - page reference counting is enabled \n"); 
-                    trace_printk("son - wakeup son_scand \n"); 
-                }
+//                if(atomic_read(&son_debug_enable)){
+//                    trace_printk("son - page reference counting is enabled \n"); 
+//                    trace_printk("son - wakeup son_scand \n"); 
+//                }
             }
         }else if(temp_write == 0){
             if(atomic_read(&son_scan_pbstate_enable)){
                 /* if current scanning state is enabled make it disabled */ 
                 atomic_set(&son_scan_pbstate_enable,SON_DISABLE);
 
-                if(atomic_read(&son_debug_enable)){
-                    trace_printk("son - page reference counting is disabled \n");
-                    trace_printk("son - sleep son_scand \n"); 
-                }
+//                if(atomic_read(&son_debug_enable)){
+//                    trace_printk("son - page reference counting is disabled \n");
+//                    trace_printk("son - sleep son_scand \n"); 
+//                }
             }
         }else if(temp_write < 0){
             /* error stat : data from user is negative value */
-            if(atomic_read(&son_debug_enable)){
-                trace_printk("son - (err)page reference counting invalid write \n"); 
-            }
+//            if(atomic_read(&son_debug_enable)){
+//                trace_printk("son - (err)page reference counting invalid write \n"); 
+//            }
             return -EINVAL;
         }
     }

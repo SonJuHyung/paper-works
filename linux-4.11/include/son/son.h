@@ -53,6 +53,4 @@ typedef struct son_scand_refcount_stats {
 void son_kthread_refcount_add_entry(struct mm_struct *mm); 
 void son_kthread_refcount_del_entry(struct mm_struct *mm);
 
-
-
 #endif

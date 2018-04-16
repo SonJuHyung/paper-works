@@ -1,7 +1,7 @@
 #!/bin/bash 
 
 DIR_EXPR=$(pwd)/.. 
-DIR_DATA=${DIR_EXPR}/data/pbusage
+DIR_DATA=${DIR_EXPR}/data/pbusage_new
 PROC_SCAN_ENABLE=/proc/son/scan_pbstate_enable 
 PROC_DEBUG_ENABLE=/proc/son/debug
 VERSION="" 
@@ -26,7 +26,7 @@ handler(){
     fi 
     echo 0 > ${PROC_SCAN_ENABLE}
     RUNNING=0    
-    echo ${FTRACE_BUFSIZE_DEFAULT} > /sys/kernel/debug/tracing/buffer_size_kb
+#    echo ${FTRACE_BUFSIZE_DEFAULT} > /sys/kernel/debug/tracing/buffer_size_kb
     kill -9 `pgrep son_log` 
 }
 
@@ -34,8 +34,8 @@ handler(){
 usage()
 {
     echo ""
-    echo "  usage : # ./son_expr.sh -s 10s -t v1 -w redis"   
-    echo "        : # ./son_expr.sh -s 1m -d -t v2 -w 429mcf"
+    echo "  usage : # ./page_usage_scanning.sh -s 10s -t v1 -w redis"   
+    echo "        : # ./page_usage_scanning.sh -s 1m -d -t v2 -w 429mcf"
     echo ""
 }
 
@@ -84,11 +84,12 @@ fi
 
 echo "increase buffer size to ${FTRACE_BUFSIZE}"
 #echo ${FTRACE_BUFSIZE} > ${DIR_FTRACE}/buffer_size_kb
-./page_usage_scanning.sh -t $VERSION -w $WORKLOAD &
+#./page_usage_scanning.sh -t $VERSION -w $WORKLOAD &
+./son_log.sh -t $VERSION -w $WORKLOAD &
 
 while [ ${RUNNING} == 1 ];
 do  
-    echo "wakeup and do experiment! - $[COUNT] "
+    echo "wakeup and get page usage information! - $[COUNT] "
     echo 1 > ${PROC_SCAN_ENABLE} 
     echo "time to sleep for ${SLEEP}"
     sleep ${SLEEP}

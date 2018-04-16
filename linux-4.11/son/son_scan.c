@@ -87,15 +87,15 @@ void son_kthread_refcount_del_entry(struct mm_struct *mm)
 static int son_scand_pbstate_check(void)
 {
     if(!atomic_read(&son_scan_pbstate_enable)){        
-        if(atomic_read(&son_debug_enable)){
-            trace_printk("son_pbscand - scan enable flag is 0 stop scanning \n"); 
-        }
+//        if(atomic_read(&son_debug_enable)){
+//            trace_printk("son_pbscand - scan enable flag is 0 stop scanning \n"); 
+//        }
         return 0;
     }
 
-    if(atomic_read(&son_debug_enable)){
-        trace_printk("son_pbscand - scan enable flag is 1 start scanning \n");
-    }
+//    if(atomic_read(&son_debug_enable)){
+//        trace_printk("son_pbscand - scan enable flag is 1 start scanning \n");
+//    }
     return 1;   
 }
 
@@ -208,7 +208,13 @@ static int scan_pageblock(struct son_scand_control *sc, unsigned long low_pfn,
     }
 #endif
     (*index)++;  
-    used_percentage=used_pages*10/512;
+    if(used_pages!=0){
+        used_percentage=used_pages*10/512;
+        if(used_percentage == 0)
+            used_percentage=1;
+    }else{
+        used_percentage=0;
+    }
     trace_printk("son_pbscand,%lu,%lu,%d \n",*index,low_pfn,used_percentage);
 
     return 0;
@@ -281,12 +287,6 @@ static int son_scand_pbstate_do_work(pg_data_t *pgdat)
         sc.status = 1;
         
         scan_zone(zone, &sc, &index); 
-
-        if(atomic_read(&son_debug_enable)){
-//            trace_printk("son_pbscand - zone scan complete state : free(%lu), umov(%lu), mov(%lu), reclm(%lu), hato(%lu), iso(%lu), inv(%lu) \n", sc.pb_stat[PB_FREE], sc.pb_stat[PB_UNMOVABLE],sc.pb_stat[PB_MOVABLE],sc.pb_stat[PB_RECLAIMABLE],sc.pb_stat[PB_HIGHATOMIC],sc.pb_stat[PB_ISOLATE],sc.pb_stat[PB_INVALID]);
-            trace_printk("son_pbscand_comple,free(%lu),inactive(%lu),active(%lu) \n", sc.pb_stat[PB_FREE], sc.pb_stat[PB_INACTIVE],sc.pb_stat[PB_ACTIVE]);
-        }
-
     }
 
 //    trace_printk("son_pbscand_comple,free(%lu), umov(%lu), mov(%lu), reclm(%lu), hato(%lu), iso(%lu), inv(%lu),compact(%lu) \n", sc.pb_stat[PB_FREE], sc.pb_stat[PB_UNMOVABLE],sc.pb_stat[PB_MOVABLE],sc.pb_stat[PB_RECLAIMABLE],sc.pb_stat[PB_HIGHATOMIC],sc.pb_stat[PB_ISOLATE],sc.pb_stat[PB_INVALID],sc.pb_stat[PB_COMPACT]);
@@ -315,15 +315,15 @@ static int son_kthread_pbstate(void *p)
 static int son_scand_refcount_check(void)
 {
     if(!atomic_read(&son_scan_refcount_enable)){        
-        if(atomic_read(&son_debug_enable)){
-            trace_printk("son_refscand - scan enable flag is 0 stop scanning \n"); 
-        }
+//        if(atomic_read(&son_debug_enable)){
+//            trace_printk("son_refscand - scan enable flag is 0 stop scanning \n"); 
+//        }
         return 0;
     }
 
-    if(atomic_read(&son_debug_enable)){
-        trace_printk("son_refscand - refcount scan enable flag is 1 start scanning \n");
-    }
+//    if(atomic_read(&son_debug_enable)){
+//        trace_printk("son_refscand - refcount scan enable flag is 1 start scanning \n");
+//    }
     return 1;   
 }
 
@@ -652,9 +652,9 @@ static int son_scand_kthread_run(int nid)
         goto out;
     }
 
-    if(atomic_read(&son_debug_enable)){
-        trace_printk("son - son_kthread_pbstate kernel thread is created \n");
-    }
+//    if(atomic_read(&son_debug_enable)){
+//        trace_printk("son - son_kthread_pbstate kernel thread is created \n");
+//    }
   
     if(pgdat->kscand_refcount)
         goto out;
@@ -668,9 +668,9 @@ static int son_scand_kthread_run(int nid)
         goto out;
     }
 
-    if(atomic_read(&son_debug_enable)){
-        trace_printk("son - son_kthread_refcount kernel thread is created \n");
-    }
+//    if(atomic_read(&son_debug_enable)){
+//        trace_printk("son - son_kthread_refcount kernel thread is created \n");
+//    }
 
 
 out:

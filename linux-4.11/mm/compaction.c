@@ -24,6 +24,10 @@
 #include <linux/vmstat.h>
 #include "internal.h"
 
+#ifdef CONFIG_SON 
+#include <son/son.h>
+#endif
+
 #ifdef CONFIG_COMPACTION
 static inline void count_compact_event(enum vm_event_item item)
 {
@@ -48,6 +52,73 @@ static inline void count_compact_events(enum vm_event_item item, long delta)
 #define block_end_pfn(pfn, order)	ALIGN((pfn) + 1, 1UL << (order))
 #define pageblock_start_pfn(pfn)	block_start_pfn(pfn, pageblock_order)
 #define pageblock_end_pfn(pfn)		block_end_pfn(pfn, pageblock_order)
+
+#ifdef CONFIG_SON 
+
+unsigned long block_end_pfn_pre = 0;
+
+int is_pageblock_empty(struct page *page,struct compact_control *cc){
+
+	struct page *page_temp = NULL;
+    unsigned long pfn;
+    unsigned long block_start_pfn;
+    unsigned long block_end_pfn;
+    unsigned long low_pfn=0;
+    int ret=0; 
+
+    pfn = page_to_pfn(page);
+    block_start_pfn = pageblock_start_pfn(pfn);
+    block_end_pfn = pageblock_end_pfn(pfn); 
+
+	for (low_pfn = block_start_pfn; low_pfn < block_end_pfn; low_pfn++) {
+
+        if(!pfn_valid_within(low_pfn)){
+            continue;
+//            return ret;
+        }
+
+        page_temp = pfn_to_page(low_pfn);
+        if(PageLRU(page_temp)){ 
+            return ret;
+        }
+    }
+
+    if(block_end_pfn != block_end_pfn_pre){
+        block_end_pfn_pre = block_end_pfn;
+        ret = 1;
+//        trace_printk("etc,cleared_page_block,%lu,%lu \n",block_start_pfn,block_end_pfn);
+    }
+    /*FIXME*/ 
+    return ret; 
+
+}
+#if 0
+int is_pageblock_empty(struct page* page, struct zone *zone){
+    struct page *block_start_page=NULL;
+    unsigned long pfn;
+    unsigned long block_start_pfn;
+    unsigned long block_end_pfn;
+    int ret=0; 
+
+    pfn = page_to_pfn(page);
+    block_start_pfn = pageblock_start_pfn(pfn);
+    block_end_pfn = pageblock_end_pfn(pfn); 
+
+    block_start_page = pageblock_pfn_to_page(block_start_pfn,block_end_pfn,zone);
+    if(block_start_page){
+        if(PageBuddy(block_start_page)){
+            if(page_order(block_start_page) >= pageblock_order){
+                //            block_start_page->pb_state_clear=1;
+                ret=1;
+            }   
+        }    
+    }
+
+    return ret; 
+}
+#endif
+
+#endif
 
 static unsigned long release_freepages(struct list_head *freelist)
 {
@@ -866,9 +937,6 @@ isolate_success:
 		list_add(&page->lru, &cc->migratepages);
 		cc->nr_migratepages++;
 		nr_isolated++;
-#ifdef CONFIG_SON  
-        page->son_compact_target=0;
-#endif
 
 		/*
 		 * Record where we could have freed pages by migration and not
@@ -1197,11 +1265,15 @@ static isolate_migrate_t isolate_migratepages(struct zone *zone,
 	unsigned long block_start_pfn;
 	unsigned long block_end_pfn;
 	unsigned long low_pfn;
-	struct page *page;
+	struct page *page;       
 	const isolate_mode_t isolate_mode =
 		(sysctl_compact_unevictable_allowed ? ISOLATE_UNEVICTABLE : 0) |
 		(cc->mode != MIGRATE_SYNC ? ISOLATE_ASYNC_MIGRATE : 0);
 
+#ifdef CONFIG_SON
+    unsigned long nr_migratepages_pre=0;
+    unsigned long temp_pfn=0;
+#endif
 	/*
 	 * Start at where we last stopped, or beginning of the zone as
 	 * initialized by compact_zone()
@@ -1251,8 +1323,19 @@ static isolate_migrate_t isolate_migratepages(struct zone *zone,
 			continue;
 
 		/* Perform the isolation */
+#ifdef CONFIG_SON
+        nr_migratepages_pre = cc->nr_migratepages;
+        temp_pfn = low_pfn;
+#endif
 		low_pfn = isolate_migratepages_block(cc, low_pfn,
 						block_end_pfn, isolate_mode);
+#ifdef CONFIG_SON 
+        if(cc->nr_migratepages != nr_migratepages_pre){
+            cc->nr_migratepb++;
+            /*FIXME*/
+//            trace_printk("etc,migrated_page_block,%lu,%lu \n",temp_pfn,block_end_pfn);
+        }
+#endif
 
 		if (!low_pfn || cc->contended)
 			return ISOLATE_ABORT;
@@ -1373,11 +1456,9 @@ static enum compact_result __compaction_suitable(struct zone *zone, int order,
 					unsigned long wmark_target)
 {
 	unsigned long watermark;
-    // trace_printk("   -> __compaction_suitable, check 1 : from sysfs ? \n");
 
 	if (is_via_compact_memory(order))
 		return COMPACT_CONTINUE;
-    // trace_printk("   -> __compaction_suitable, check 1 : from sysfs ?-> pass \n");
 
 	watermark = zone->watermark[alloc_flags & ALLOC_WMARK_MASK];
 	/*
@@ -1385,14 +1466,10 @@ static enum compact_result __compaction_suitable(struct zone *zone, int order,
 	 * should be no need for compaction at all.
 	 */
 
-    // trace_printk("   -> __compaction_suitable, check 2 : free-2^order < wmark ? || no contig ? \n");
 	if (zone_watermark_ok(zone, order, watermark, classzone_idx,
 								alloc_flags)){
-        // trace_printk("   -> __compaction_suitable, check 2 : free-2^order < wmark ? || no contig ? -> fail \n");
-
 		return COMPACT_SUCCESS;
     }
-    // trace_printk("   -> __compaction_suitable, check 2 : free-2^order < wmark ? || no contig ? -> pass \n");
 
 	/*
 	 * Watermarks for order-0 must be met for compaction to be able to
@@ -1411,14 +1488,11 @@ static enum compact_result __compaction_suitable(struct zone *zone, int order,
 	watermark = (order > PAGE_ALLOC_COSTLY_ORDER) ?
 				low_wmark_pages(zone) : min_wmark_pages(zone);
 	watermark += compact_gap(order);
-    // trace_printk("   -> __compaction_suitable, check 3 : free-1 < wmark(order>3 ? low:min)+2^order*2  \n");
 
 	if (!__zone_watermark_ok(zone, 0, watermark, classzone_idx,
 						ALLOC_CMA, wmark_target)){
-        // trace_printk("   -> __compaction_suitable, check 3 : free-1 < wmark(order>3 ? low:min)+2^order*2 -> fail  \n");
 		return COMPACT_SKIPPED;
     }
-    // trace_printk("   -> __compaction_suitable, check 3 : free-1 < wmark(order>3 ? low:min)+2^order*2 -> pass  \n");
 
 	return COMPACT_CONTINUE;
 }
@@ -1430,10 +1504,8 @@ enum compact_result compaction_suitable(struct zone *zone, int order,
 	enum compact_result ret;
 	int fragindex;
 
-    // trace_printk("  -> compaction_suitable, check 1 : suitable ? \n");
 	ret = __compaction_suitable(zone, order, alloc_flags, classzone_idx,
 				    zone_page_state(zone, NR_FREE_PAGES));
-    // trace_printk("  -> compaction_suitable, check 1 : suitable ? -> pass %d\n",ret);
 
 	/*
 	 * fragmentation index determines if allocation failures are due to
@@ -1451,17 +1523,14 @@ enum compact_result compaction_suitable(struct zone *zone, int order,
 	 * excessive compaction for costly orders, but it should not be at the
 	 * expense of system stability.
 	 */
-    // trace_printk("  -> compaction_suitable, check 2 : frag index < 500 (order>3) ? \n");
 
 	if (ret == COMPACT_CONTINUE && (order > PAGE_ALLOC_COSTLY_ORDER)) {
 
 		fragindex = fragmentation_index(zone, order);
 		if (fragindex >= 0 && fragindex <= sysctl_extfrag_threshold)
 			ret = COMPACT_NOT_SUITABLE_ZONE;
-        // trace_printk("  -> compaction_suitable, check 2 : frag index < 500 (order>3) ? -> fail %d, %d \n",fragindex,ret);
 
 	}
-    // trace_printk("  -> compaction_suitable, check 2 : frag index < 500 (order>3) ? -> pass \n");
 
 	trace_mm_compaction_suitable(zone, order, ret);
 	if (ret == COMPACT_NOT_SUITABLE_ZONE)
@@ -1687,13 +1756,16 @@ static enum compact_result compact_zone_order(struct zone *zone, int order,
 		.direct_compaction = true,
 		.whole_zone = (prio == MIN_COMPACT_PRIORITY),
 		.ignore_skip_hint = (prio == MIN_COMPACT_PRIORITY),
+#ifdef CONFIG_SON
+        .nr_migratepb = 0,
+        .nr_clearedpb = 0,
+#endif
 		.ignore_block_suitable = (prio == MIN_COMPACT_PRIORITY)
 	};
 	INIT_LIST_HEAD(&cc.freepages);
 	INIT_LIST_HEAD(&cc.migratepages);
 
 	ret = compact_zone(zone, &cc);
-
 	VM_BUG_ON(!list_empty(&cc.freepages));
 	VM_BUG_ON(!list_empty(&cc.migratepages));
 
@@ -1795,6 +1867,10 @@ static void compact_node(int nid)
 		.ignore_skip_hint = true,
 		.whole_zone = true,
 		.gfp_mask = GFP_KERNEL,
+#ifdef CONFIG_SON
+        .nr_migratepb = 0,
+        .nr_clearedpb = 0,
+#endif
 	};
 
 
@@ -1806,11 +1882,18 @@ static void compact_node(int nid)
 
 		cc.nr_freepages = 0;
 		cc.nr_migratepages = 0;
+#ifdef CONFIG_SON 
+        cc.nr_migratepb = 0;
+        cc.nr_clearedpb = 0;
+#endif
 		cc.zone = zone;
 		INIT_LIST_HEAD(&cc.freepages);
 		INIT_LIST_HEAD(&cc.migratepages);
 
 		compact_zone(zone, &cc);
+#ifdef CONFIG_SON
+        trace_printk("etc,compact_zone,%s,%lu,%lu \n",zone->name,cc.nr_migratepb,cc.nr_clearedpb);
+#endif
 
 		VM_BUG_ON(!list_empty(&cc.freepages));
 		VM_BUG_ON(!list_empty(&cc.migratepages));
@@ -1931,7 +2014,10 @@ static void kcompactd_do_work(pg_data_t *pgdat)
 		.mode = MIGRATE_SYNC_LIGHT,
 		.ignore_skip_hint = true,
 		.gfp_mask = GFP_KERNEL,
-
+#ifdef CONFIG_SON
+        .nr_migratepb = 0,
+        .nr_clearedpb = 0,
+#endif
 	};
 	trace_mm_compaction_kcompactd_wake(pgdat->node_id, cc.order,
 							cc.classzone_idx);
@@ -1995,14 +2081,15 @@ static void kcompactd_do_work(pg_data_t *pgdat)
 
 void wakeup_kcompactd(pg_data_t *pgdat, int order, int classzone_idx)
 {
-    trace_printk("etc,wakeup_kcompactd, check 1 : order-0 ? %d \n",order);
+    if(atomic_read(&son_debug_enable))
+        trace_printk("etc,wakeup_kcompactd, check 1 : order-0 ? %d \n",order);
 
 	if (!order){
-        trace_printk("etc,wakeup_kcompactd, check 1 : order-0 ? %d -> fail(free : %lu) \n",order,global_page_state(NR_FREE_PAGES));
+        if(atomic_read(&son_debug_enable))
+            trace_printk("etc,wakeup_kcompactd, check 1 : order-0 ? %d -> fail(free : %lu) \n",order,global_page_state(NR_FREE_PAGES));
 
 		return;
     }
-    // trace_printk("wakeup_kcompactd, check 1 : order-0 ? -> pass %d \n",order);
 
 	if (pgdat->kcompactd_max_order < order)
 		pgdat->kcompactd_max_order = order;
@@ -2016,17 +2103,12 @@ void wakeup_kcompactd(pg_data_t *pgdat, int order, int classzone_idx)
 
 	if (pgdat->kcompactd_classzone_idx > classzone_idx)
 		pgdat->kcompactd_classzone_idx = classzone_idx;
-    // trace_printk("wakeup_kcompactd, check 2 : active waitqueue ? \n");
 	if (!waitqueue_active(&pgdat->kcompactd_wait))
 		return;
-    // trace_printk("wakeup_kcompactd, check 2 : active waitqueue -> pass \n");
 
-    // trace_printk("wakeup_kcompactd, check 3 : suitable ? \n");
 	if (!kcompactd_node_suitable(pgdat)){
-        // trace_printk("wakeup_kcompactd, check 3 : suitable -> fail COMPACT_SKIPPED or SUCCESS \n");
 		return;
     }
-    // trace_printk("wakeup_kcompactd, check 3 : suitable -> pass \n");
 
 	trace_mm_compaction_wakeup_kcompactd(pgdat->node_id, order,
 							classzone_idx);

@@ -196,6 +196,10 @@ struct compact_control {
 	const int classzone_idx;	/* zone index of a direct compactor */
 	struct zone *zone;
 	bool contended;			/* Signal lock or sched contention */
+#ifdef CONFIG_SON
+    unsigned long nr_migratepb;
+    unsigned long nr_clearedpb;
+#endif
 };
 
 unsigned long
@@ -235,6 +239,11 @@ static inline unsigned int page_order(struct page *page)
  * use of the result.
  */
 #define page_order_unsafe(page)		READ_ONCE(page_private(page))
+
+#ifdef CONFIG_SON
+int is_pageblock_empty(struct page *page,struct compact_control *cc);
+#endif
+
 
 static inline bool is_cow_mapping(vm_flags_t flags)
 {

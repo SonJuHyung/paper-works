@@ -1271,6 +1271,8 @@ out:
 	return rc;
 }
 
+
+
 /*
  * migrate_pages - migrate the pages specified in a list, to the free pages
  *		   supplied as the target for the page migration
@@ -1305,6 +1307,15 @@ int migrate_pages(struct list_head *from, new_page_t get_new_page,
 	int swapwrite = current->flags & PF_SWAPWRITE;
 	int rc;
 
+#ifdef CONFIG_SON     
+    struct compact_control *cc = NULL;    
+    struct page *page_middle_pb;
+
+    if(reason == MR_COMPACTION){
+        cc = (struct compact_control*)private;
+    }
+#endif
+
 	if (!swapwrite)
 		current->flags |= PF_SWAPWRITE;
 
@@ -1313,6 +1324,9 @@ int migrate_pages(struct list_head *from, new_page_t get_new_page,
 
 		list_for_each_entry_safe(page, page2, from, lru) {
 			cond_resched();
+#ifdef CONFIG_SON
+            page_middle_pb = page; 
+#endif
 
 			if (PageHuge(page))
 				rc = unmap_and_move_huge_page(get_new_page,
@@ -1328,10 +1342,18 @@ int migrate_pages(struct list_head *from, new_page_t get_new_page,
 				nr_failed++;
 				goto out;
 			case -EAGAIN:
+                // again 이면 list 에서 삭제 안함
 				retry++;
 				break;
 			case MIGRATEPAGE_SUCCESS:
+                // again 이 아니면 list 에서 삭제
 				nr_succeeded++;
+#ifdef CONFIG_SON 
+                if(reason == MR_COMPACTION){
+                    if(is_pageblock_empty(page_middle_pb,cc))
+                        cc->nr_clearedpb++;
+                }
+#endif
 				break;
 			default:
 				/*

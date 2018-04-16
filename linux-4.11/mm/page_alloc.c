@@ -1787,9 +1787,6 @@ static void prep_new_page(struct page *page, unsigned int order, gfp_t gfp_flags
 	else
 		clear_page_pfmemalloc(page); 
 
-#ifdef CONFIG_SON  
-    page->son_compact_target=0;
-#endif
 }
 
 /*

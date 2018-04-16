@@ -30,7 +30,7 @@ struct mem_cgroup;
 
 #ifdef CONFIG_SON
 
-#define FREQ_BITMAP_SIZE 8
+#define FREQ_BITMAP_SIZE 16
 #define PRI_HISTORY_SIZE 3
 
 /* structure for tracking temporal utilization */
@@ -233,8 +233,8 @@ struct page {
 	void *shadow;
 #endif 
 
-#ifdef CONFIG_SON
-	int son_compact_target;
+#ifdef CONFIG_SON 
+    int pb_state_clear;
     page_utilmap_t page_util_info;
 #endif
 

@@ -1310,7 +1310,9 @@ int migrate_pages(struct list_head *from, new_page_t get_new_page,
 #ifdef CONFIG_SON     
     struct compact_control *cc = NULL;    
     struct page *page_middle_pb;
-
+    page_utilmap_t *utilmap;
+    unsigned long pfn_migrated = 0;
+    int frequency=0;
     if(reason == MR_COMPACTION){
         cc = (struct compact_control*)private;
     }
@@ -1352,6 +1354,10 @@ int migrate_pages(struct list_head *from, new_page_t get_new_page,
                 if(reason == MR_COMPACTION){
                     if(is_pageblock_empty(page_middle_pb,cc))
                         cc->nr_clearedpb++;
+                    pfn_migrated = page_to_pfn(page);
+                    utilmap = &page->page_util_info;
+                    frequency = bitmap_weight(utilmap->freq_bitmap,FREQ_BITMAP_SIZE);
+                    trace_printk("compaction,%lu,%d \n",pfn_migrated,frequency);
                 }
 #endif
 				break;

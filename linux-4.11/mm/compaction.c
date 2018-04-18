@@ -1892,7 +1892,7 @@ static void compact_node(int nid)
 
 		compact_zone(zone, &cc);
 #ifdef CONFIG_SON
-        trace_printk("etc,compact_zone,%s,%lu,%lu \n",zone->name,cc.nr_migratepb,cc.nr_clearedpb);
+//        trace_printk("etc,compact_zone,%s,%lu,%lu \n",zone->name,cc.nr_migratepb,cc.nr_clearedpb);
 #endif
 
 		VM_BUG_ON(!list_empty(&cc.freepages));

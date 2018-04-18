@@ -33,9 +33,13 @@
 #include <asm/uaccess.h>
 #include <asm/pgtable.h>
 #include <linux/page_idle.h>
+#include <linux/jiffies.h>
 
 #include <son/son.h>
 #include "../mm/internal.h"
+
+static unsigned int son_scand_refcount_sleep_millisecs = 6000;
+
 
 //#define SCAND_WORKQUEUE
 
@@ -403,7 +407,7 @@ static int son_pte_walker(pte_t *pte, unsigned long addr,
                 //  => 1111 0111
 			    frequency=bitmap_weight(utilmap->freq_bitmap,FREQ_BITMAP_SIZE);
 //                trace_printk("son_refscand,bp_pfn:%lu,freq:%d \n",pfn,frequency);
-                trace_printk("son_refscand,bp,%lu,%d \n",pfn,frequency);
+//                trace_printk("son_refscand,bp,%lu,%d \n",pfn,frequency);
 			}
 
 			set_page_idle(page);
@@ -490,7 +494,7 @@ static int son_pmd_walker(pmd_t *pmd, unsigned long addr,
                 //  => 1111 0111
 			    frequency=bitmap_weight(utilmap->freq_bitmap,FREQ_BITMAP_SIZE);
 //                trace_printk("son_refscand,hp_pfn:%lu,freq:%d \n",pfn,frequency);
-                trace_printk("son_refscand,hp,%lu,%d \n",pfn,frequency);
+//                trace_printk("son_refscand,hp,%lu,%d \n",pfn,frequency);
             }
 
 			set_page_idle(page);
@@ -560,7 +564,7 @@ static int son_scand_refcount_do_work(pg_data_t *pgdat)
     walker_node_stats->idle_bpage_count=0;
 
 
-    trace_printk("son_refscand,start,-1,-1\n");
+//    trace_printk("son_refscand,start,-1,-1\n");
     // Scanning per-application anonymous pages
 	list_for_each_entry_rcu(mm, &son_manager.son_scand_refcount_list, son_scand_refcount_link) {
 
@@ -604,7 +608,7 @@ static int son_scand_refcount_do_work(pg_data_t *pgdat)
         put_task_struct(tsk);
     }
 
-    trace_printk("son_refscand,end,-1,-1,%lu,%lu,%lu,%lu \n",walker_node_stats->total_hpage_count,walker_node_stats->idle_hpage_count,walker_node_stats->total_bpage_count,walker_node_stats->idle_bpage_count);
+//    trace_printk("son_refscand,end,-1,-1,%lu,%lu,%lu,%lu \n",walker_node_stats->total_hpage_count,walker_node_stats->idle_hpage_count,walker_node_stats->total_bpage_count,walker_node_stats->idle_bpage_count);
     return 0;
 
 unlock_exit:
@@ -613,20 +617,44 @@ unlock_exit:
 
 }
 
+static int son_scand_refcount_has_work(void)
+{
+	return son_scand_refcount_sleep_millisecs && 
+        (!list_empty(&son_manager.son_scand_refcount_list));
+}
+
+static int son_scand_refcount_wait_event(void)
+{
+	return son_scand_refcount_sleep_millisecs && 
+        (!list_empty(&son_manager.son_scand_refcount_list) || kthread_should_stop());
+}
+
+static void son_scand_refcount_wait_work(void)
+{
+    if(son_scand_refcount_has_work())
+		wait_event_freezable_timeout(son_scand_refcount_wait,0,msecs_to_jiffies(son_scand_refcount_sleep_millisecs));
+    else
+        wait_event_freezable(son_scand_refcount_wait,son_scand_refcount_wait_event());
+}
+#define VERSION 1
 static int son_kthread_refcount(void *p)
 {
 	pg_data_t *pgdat = (pg_data_t*)p;
 
     set_freezable();
-	set_user_nice(current, MIN_NICE);
+	set_user_nice(current, MAX_NICE);
 
     son_manager.mm_count=0;
-	INIT_LIST_HEAD(&son_manager.son_scand_refcount_list);
 
     while(!kthread_should_stop()){
+#if VERSION 
         wait_event_freezable(son_scand_refcount_wait,son_scand_refcount_check());
         son_scand_refcount_do_work(pgdat);
         atomic_set(&son_scan_refcount_enable,SON_DISABLE);
+#else
+        son_scand_refcount_do_work(pgdat);
+        son_scand_refcount_wait_work();
+#endif
     }
 
     return 0;
@@ -659,6 +687,8 @@ static int son_scand_kthread_run(int nid)
     if(pgdat->kscand_refcount)
         goto out;
 
+	INIT_LIST_HEAD(&son_manager.son_scand_refcount_list);
+
     pgdat->kscand_refcount = kthread_run(son_kthread_refcount, pgdat, "son_refscand%d",nid); 
     // kthread_run 을 통해 내부적으로 kthread_create 호출 및 
     // create 한 kernel thread 를 바로 run queue 에 넣음 
@@ -668,6 +698,9 @@ static int son_scand_kthread_run(int nid)
         goto out;
     }
 
+    if(!list_empty(&son_manager.son_scand_refcount_list))
+        wake_up_interruptible(&son_scand_refcount_wait);
+    
 //    if(atomic_read(&son_debug_enable)){
 //        trace_printk("son - son_kthread_refcount kernel thread is created \n");
 //    }

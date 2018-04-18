@@ -42,22 +42,36 @@ print("done !")
 
 # plotting ...
 print(paste("plotting ",path_result,"..."))
-png(path_result, width=6000,height=600,unit="px")
+# mongo 15G 1K-9M, redis 14G 1K-8M v2 test
+png(path_result, width=10000,height=1700,unit="px")
+# mongo 26G 1K-17M v2 test
+#png(path_result, width=10000,height=1400,unit="px")
 
-par(mar=c(10,5,3,3)) # default : c(5.1, 4.1, 4.1, 2.1) / margin : down, left, up, right
-par(mgp=c(6,2,0)) # default : c(3,1,0) / position : title, line label, line 
+#par(mar=c(40,5,3,3)) # default : c(5.1, 4.1, 4.1, 2.1) / margin : down, left, up, right
+#par(mgp=c(20,6,0)) # default : c(3,1,0) / position : title, line label, line 
 
-xlab_text = "physical pge block usage status" 
+# mongo 15G 1K-9M, redis 14G 1K-8M v2 test
+par(mar=c(50,5,3,3),mgp=c(22,6,0),xpd=TRUE) 
+# mongo 26G 1K-17M v2 test
+#par(mar=c(50,5,3,3),mgp=c(22,6,0),xpd=TRUE) 
+
+# mongo 15G 1K-9M, redis 14G 1K-8M v2 test
+xlab_text = "physical pge block usage status - execute redis(14G) after mongodb(15G)" 
+# mongo 26G 1K-17M v2 test
+#xlab_text = "physical pge block usage status - execute mongodb(26G)" 
 
 mul=1
 mul_sub=0
+space=50
 
-plot(1,type="n",xlab=xlab_text,ylab="",xlim=c(1,width_max*mul),ylim=c(1,height_max), xaxt='n',yaxt='n',cex.lab=4,xaxs='i',yaxs='r')
+plot(1,type="n",xlab="",ylab="",xlim=c(1,width_max*mul+space),ylim=c(1,height_max), xaxt='n',yaxt='n',xaxs='i',yaxs='r',bty="n")
+box(lwd=6)
+title(xlab=xlab_text,cex.lab=13)
 
-MB_to_GB=512
+MB_to_GB=512*5
 x_bar_raw<-seq(from=0,to=width_max,by=MB_to_GB)
-x_bar<-paste(x_bar_raw/MB_to_GB,"GB",sep = " ")
-axis(1,at=x_bar_raw,labels=x_bar,cex.axis=2,tck=-0.01)
+x_bar<-paste(x_bar_raw/MB_to_GB*5,"GB",sep = " ")
+axis(1,at=x_bar_raw,labels=x_bar,cex.axis=6,tck=-0.01)
 
 
 x_pos=0
@@ -80,7 +94,7 @@ for( i in data_frame$V2  ){
         if(color_index_raw == 10){
             print("Red")
             color_index=4 
-            points(x_pos*mul-mul_sub,y_pos,pch=1,cex=0.1,col=colors[color_index])  
+            points(x_pos*mul-mul_sub,y_pos,pch=1,cex=0.5,col=colors[color_index])  
         }
     }else{
         print("Zero")
@@ -110,6 +124,7 @@ for( i in data_frame$V2  ){
              print("Yellow")
             color_index=3          
             points(x_pos*mul-mul_sub,y_pos,pch=1,cex=0.5,col=colors[color_index])  
+#            points(x_pos*mul-mul_sub,y_pos,pch=1,cex=0.5,col=colors[color_index])  
         }
     }
 
@@ -136,7 +151,8 @@ for( i in data_frame$V2  ){
         if(4<= color_index_raw && color_index_raw <= 6){
             print("Green")
             color_index=2
-            points(x_pos*mul-mul_sub,y_pos,pch=1,cex=1,col=colors[color_index])  
+#            points(x_pos*mul-mul_sub,y_pos,pch=1,cex=0.5,col=colors[color_index])  
+            points(x_pos*mul-mul_sub,y_pos,pch=16,cex=1.2,col=colors[color_index])  
         }
     }
 
@@ -161,13 +177,23 @@ for( i in data_frame$V2  ){
     if(color_index_raw != 0){
         if(1<=color_index_raw && color_index_raw <= 3){
             print("Blue")
-            color_index_raw=1
+            color_index=1
+#            points(x_pos*mul-mul_sub,y_pos,pch=16,cex=0.5,col=colors[color_index])  
             points(x_pos*mul-mul_sub,y_pos,pch=16,cex=1.5,col=colors[color_index])  
         }
     }
 
     index=index+1 
 }
+
+legend_text=c("1~29 % used PB", "30~69 % used PB", "70~99 % used PB", "100 % used PB")
+
+# mongo 15G 1K-9M, redis 14G 1K-8M v2 test
+legend("bottom",legend_text,pch=c(15,15,15,15),col=colors,inset=c(0,-0.8),xpd=TRUE,horiz=TRUE,bty="n",cex=10)
+# mongo 26G 1K-17M v2 test
+#legend("bottom",legend_text,pch=c(15,15,15,15),col=colors,inset=c(0,-1.0),xpd=TRUE,horiz=TRUE,bty="n",cex=10)
+
+
 
 print("done !")
 

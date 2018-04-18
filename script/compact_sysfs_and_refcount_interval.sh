@@ -20,7 +20,7 @@ trap 'handler' 2
 
 # handler function
 handler(){
-    echo "SIG_INT signal accepted exit experiment!"
+    echo "SIG_INT signal accepted exit experiment!"    
     RUNNING=0    
 }
 
@@ -119,9 +119,10 @@ do
         FRAG_CONTEXT=$(cat ${FILE_SYSFRAG} | grep Normal)
         AFTER_COMPACT=$(echo $FRAG_CONTEXT | awk '{ split($0,arr," "); print(arr[14]); }')
     fi 
+    # ufi logging version
     echo "${COUNT},${BEFORE_COMPACT},${AFTER_COMPACT}"
     echo "${COUNT},${BEFORE_COMPACT},${AFTER_COMPACT}" >> ${FILE_DATA}
-
+   
     sleep ${SLEEP}
     COUNT=`expr ${COUNT} + 1` 
 done 

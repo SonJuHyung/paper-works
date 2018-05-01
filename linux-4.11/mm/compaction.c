@@ -48,10 +48,14 @@ static inline void count_compact_events(enum vm_event_item item, long delta)
 #define CREATE_TRACE_POINTS
 #include <trace/events/compaction.h>
 
+#ifndef CONFIG_SON
+
 #define block_start_pfn(pfn, order)	round_down(pfn, 1UL << (order))
 #define block_end_pfn(pfn, order)	ALIGN((pfn) + 1, 1UL << (order))
 #define pageblock_start_pfn(pfn)	block_start_pfn(pfn, pageblock_order)
-#define pageblock_end_pfn(pfn)		block_end_pfn(pfn, pageblock_order)
+#define pageblock_end_pfn(pfn)		block_end_pfn(pfn, pageblock_order) 
+/* INFO - move above macros to internal.h  */
+#endif
 
 #ifdef CONFIG_SON 
 
@@ -92,31 +96,6 @@ int is_pageblock_empty(struct page *page,struct compact_control *cc){
     return ret; 
 
 }
-#if 0
-int is_pageblock_empty(struct page* page, struct zone *zone){
-    struct page *block_start_page=NULL;
-    unsigned long pfn;
-    unsigned long block_start_pfn;
-    unsigned long block_end_pfn;
-    int ret=0; 
-
-    pfn = page_to_pfn(page);
-    block_start_pfn = pageblock_start_pfn(pfn);
-    block_end_pfn = pageblock_end_pfn(pfn); 
-
-    block_start_page = pageblock_pfn_to_page(block_start_pfn,block_end_pfn,zone);
-    if(block_start_page){
-        if(PageBuddy(block_start_page)){
-            if(page_order(block_start_page) >= pageblock_order){
-                //            block_start_page->pb_state_clear=1;
-                ret=1;
-            }   
-        }    
-    }
-
-    return ret; 
-}
-#endif
 
 #endif
 

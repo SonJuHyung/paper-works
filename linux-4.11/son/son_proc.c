@@ -66,7 +66,9 @@ static ssize_t son_write_pbstate_enable(struct file *filep,
             if(!atomic_read(&son_scan_pbstate_enable)){
                 /* if current scanning state is not enabled make it enabled*/
                 atomic_set(&son_scan_pbstate_enable,SON_ENABLE);
+#if SON_PBSCAND_ENABLE
                 wake_up_interruptible(&son_scand_pbstate_wait);
+#endif
 //                if(atomic_read(&son_debug_enable)){
 //                    trace_printk("son - page reference counting is enabled \n"); 
 //                    trace_printk("son - wakeup son_scand \n"); 
@@ -130,7 +132,9 @@ static ssize_t son_write_refcount_enable(struct file *filep,
             if(!atomic_read(&son_scan_refcount_enable)){
                 /* if current scanning state is not enabled make it enabled*/
                 atomic_set(&son_scan_refcount_enable,SON_ENABLE);
+#if SON_REFSCAND_ENABLE
                 wake_up_interruptible(&son_scand_refcount_wait);
+#endif
             }
         }else if(temp_write == 0){
             if(atomic_read(&son_scan_refcount_enable)){

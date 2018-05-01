@@ -3,17 +3,21 @@
 DIR_EXPR=$(pwd)/.. 
 DIR_DATA=${DIR_EXPR}/data/temp
 COMPACT_ENABLE=/proc/sys/vm/compact_memory
- FILE_SYSFRAG=/sys/kernel/debug/extfrag/unusable_index 
+REFSCAN_ENABLE=/proc/son/scan_refcount_enable
+FILE_SYSFRAG=/sys/kernel/debug/extfrag/unusable_index  
+
 
 VERSION="" 
 WORKLOAD="" 
 BEFORE_COMPACT=-1
 AFTER_COMPACT=-1
 COMPACT_CHAR="default"
+REFSCAN_CHAR="default"
 SLEEP=""
 RUNNING=1
 COUNT=1 
-COMPACT=0
+COMPACT=0 
+REFSCAN=0
 
 # signal handler
 trap 'handler' 2
@@ -28,8 +32,8 @@ handler(){
 usage()
 {
     echo ""
-    echo "  usage : # ./son_compact.sh -s 10s -t v1 -w vm_redis"   
-    echo "        : # ./son_compact.sh -s 1m  -t v2 -w vm_mongodb -c"
+    echo "  usage : # ./compact_sysfs_interval.sh -s 10s -t v1 -w vm_redis -r"   
+    echo "        : # ./compact_sysfs_interval.sh -s 1m  -t v2 -w vm_mongodb -c"
     echo ""
 }
 
@@ -49,7 +53,7 @@ then
 fi
 
 # option parsing
-while getopts w:t:s:c opt 
+while getopts w:t:s:cr opt 
 do
     case $opt in 
         w)
@@ -65,6 +69,10 @@ do
             COMPACT=1 
             COMPACT_CHAR="compact"
             ;;
+        r)
+            REFSCAN=1
+            REFSCAN_CHAR="refscan"
+            ;;
         *)
             usage 
             exit 0
@@ -78,7 +86,8 @@ then
     exit 0
 fi
 
-FILE_DATA=${DIR_DATA}/frag_result_${COMPACT_CHAR}_${WORKLOAD}_${VERSION}.txt 
+FILE_DATA=${DIR_DATA}/frag_result_${COMPACT_CHAR}_${REFSCAN_CHAR}_${WORKLOAD}_${VERSION}.txt 
+
 if [ -e ${FILE_DATA} ]
 then 
     rm -rf ${FILE_DATA}
@@ -118,11 +127,18 @@ do
         echo 1 > ${COMPACT_ENABLE} 
         FRAG_CONTEXT=$(cat ${FILE_SYSFRAG} | grep Normal)
         AFTER_COMPACT=$(echo $FRAG_CONTEXT | awk '{ split($0,arr," "); print(arr[14]); }')
-    fi 
+    fi
+
+    if [ ${REFSCAN} == 1 ]
+    then
+        echo "refcount scanning ..."
+        echo 1 > ${REFSCAN_ENABLE}         
+    fi
+
     # ufi logging version
     echo "${COUNT},${BEFORE_COMPACT},${AFTER_COMPACT}"
     echo "${COUNT},${BEFORE_COMPACT},${AFTER_COMPACT}" >> ${FILE_DATA}
-   
+
     sleep ${SLEEP}
     COUNT=`expr ${COUNT} + 1` 
 done 

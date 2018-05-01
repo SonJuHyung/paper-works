@@ -793,12 +793,14 @@ static struct mm_struct *mm_init(struct mm_struct *mm, struct task_struct *p,
 	mm->pmd_huge_pte = NULL;
 #endif
 
-#ifdef CONFIG_SON 
+#ifdef CONFIG_SON  
+#if SON_REFSCAND_ENABLE
     INIT_LIST_HEAD(&mm->son_scand_refcount_link);
     mm->son_mm_scand_stats.total_hpage_count=0;
     mm->son_mm_scand_stats.total_bpage_count=0;
     mm->son_mm_scand_stats.idle_hpage_count=0;
     mm->son_mm_scand_stats.idle_bpage_count=0;
+#endif
 #endif
 	if (current->mm) {
 		mm->flags = current->mm->flags & MMF_INIT_MASK;
@@ -889,7 +891,9 @@ static inline void __mmput(struct mm_struct *mm)
 	ksm_exit(mm);
 	khugepaged_exit(mm); /* must run before exit_mmap */
 #ifdef CONFIG_SON 
+#if SON_REFSCAND_ENABLE
     son_kthread_refcount_del_entry(mm);
+#endif
 #endif
 	exit_mmap(mm);
 	mm_put_huge_zero_page(mm);

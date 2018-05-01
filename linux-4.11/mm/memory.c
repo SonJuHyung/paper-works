@@ -143,6 +143,28 @@ static int __init init_zero_pfn(void)
 }
 core_initcall(init_zero_pfn);
 
+#ifdef CONFIG_SON 
+#if SON_PBSTAT_ENABLE
+struct kmem_cache *son_pbutil_node_cachep;
+
+void __init son_kmem_cache_init(void)
+{
+	son_pbutil_node_cachep = kmem_cache_create("son_pbutil_node", sizeof(pbutil_node_t), 0, SLAB_PANIC, NULL);
+    /* create object for pbstat radix tree  */
+}
+
+/* allocate pbstat node for radix tree if page in page block range is first allocated */
+pbutil_node_t *son_pbutil_node_alloc(void)
+{
+    pbutil_node_t *node;
+	node  = kmem_cache_zalloc(son_pbutil_node_cachep, GFP_ATOMIC);
+	if (!node)
+		return NULL;
+
+	return node;
+}
+#endif
+#endif
 
 #if defined(SPLIT_RSS_COUNTING)
 
@@ -3822,13 +3844,19 @@ static int __handle_mm_fault(struct vm_area_struct *vma, unsigned long address,
         return VM_FAULT_OOM;
     if (pmd_none(*vmf.pmd) && transparent_hugepage_enabled(vma)) {
         ret = create_huge_pmd(&vmf);
-#ifdef CONFIG_SON
+#ifdef CONFIG_SON 
+#if SON_REFSCAND_ENABLE
         if (!(ret & VM_FAULT_FALLBACK)){
             if(mm && atomic_read(&mm->mm_users) && list_empty(&mm->son_scand_refcount_link)){
                 son_kthread_refcount_add_entry(mm);
             }
             return ret;
         }
+#else 
+        if (!(ret & VM_FAULT_FALLBACK)){
+            return ret;
+        }
+#endif
 #else
         if (!(ret & VM_FAULT_FALLBACK)){
             return ret;
@@ -3857,9 +3885,11 @@ static int __handle_mm_fault(struct vm_area_struct *vma, unsigned long address,
     }
 
 #ifdef CONFIG_SON 
+#if SON_REFSCAND_ENABLE
     if(mm && atomic_read(&mm->mm_users) && list_empty(&mm->son_scand_refcount_link)){
         son_kthread_refcount_add_entry(mm);
-    }
+    } 
+#endif
 #endif
 
 

@@ -197,8 +197,8 @@ struct compact_control {
 	struct zone *zone;
 	bool contended;			/* Signal lock or sched contention */
 #ifdef CONFIG_SON
-    unsigned long nr_migratepb;
-    unsigned long nr_clearedpb;
+    unsigned long nr_migratepb; /* scanned page block count  */
+    unsigned long nr_clearedpb; /* cleared page block count  */
 #endif
 };
 
@@ -513,5 +513,13 @@ static inline void try_to_unmap_flush_dirty(void)
 extern const struct trace_print_flags pageflag_names[];
 extern const struct trace_print_flags vmaflag_names[];
 extern const struct trace_print_flags gfpflag_names[];
+
+#ifdef CONFIG_SON
+#define block_start_pfn(pfn, order)	round_down(pfn, 1UL << (order))
+#define block_end_pfn(pfn, order)	ALIGN((pfn) + 1, 1UL << (order))
+#define pageblock_start_pfn(pfn)	block_start_pfn(pfn, pageblock_order)
+#define pageblock_end_pfn(pfn)		block_end_pfn(pfn, pageblock_order)
+/* INFO - moved from compaction.c  */
+#endif
 
 #endif	/* __MM_INTERNAL_H */

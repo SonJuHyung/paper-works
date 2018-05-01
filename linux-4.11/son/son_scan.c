@@ -38,68 +38,28 @@
 #include <son/son.h>
 #include "../mm/internal.h"
 
-static unsigned int son_scand_refcount_sleep_millisecs = 6000;
 
-
-//#define SCAND_WORKQUEUE
-
-struct son_scand_refcount_manager {
-    unsigned int mm_count;
-    struct list_head son_scand_refcount_list;    
-};
-
-struct son_scand_refcount_manager son_manager;
-
-DEFINE_SPINLOCK(son_scand_refcount_list_lock);
+#if SON_PBSCAND_ENABLE
+/* if page block scanning option is enabled compile it  */
 
 DECLARE_WAIT_QUEUE_HEAD(son_scand_pbstate_wait);
-DECLARE_WAIT_QUEUE_HEAD(son_scand_refcount_wait);
-
-#if 0
-static unsigned int son_scand_sleep_millisecs = 60000; // 60s 
-#endif
-
-#ifdef SON_SCAN_WORKQUEUE
-
-static int son_scand_kthread_run(void *none)
-{
-    return 0;
-}
-
-// FIXME 
-//  - workqueue support
-
-#else
-
-void son_kthread_refcount_add_entry(struct mm_struct *mm)
-{
-	spin_lock(&son_scand_refcount_list_lock);
-    son_manager.mm_count++;
-	list_add_tail_rcu(&mm->son_scand_refcount_link, &son_manager.son_scand_refcount_list);
-	spin_unlock(&son_scand_refcount_list_lock);
-}
-
-void son_kthread_refcount_del_entry(struct mm_struct *mm)
-{
-	spin_lock(&son_scand_refcount_list_lock);
-    son_manager.mm_count--;    
-	list_del_rcu(&mm->son_scand_refcount_link);
-	spin_unlock(&son_scand_refcount_list_lock);
-}
 
 
 static int son_scand_pbstate_check(void)
 {
-    if(!atomic_read(&son_scan_pbstate_enable)){        
-//        if(atomic_read(&son_debug_enable)){
-//            trace_printk("son_pbscand - scan enable flag is 0 stop scanning \n"); 
-//        }
+    if(!atomic_read(&son_scan_pbstate_enable)){       
+#if SON_DEBUG_ENABLE 
+        if(atomic_read(&son_debug_enable)){
+            trace_printk("son_pbscand - scan enable flag is 0 stop scanning \n"); 
+        }
+#endif
         return 0;
     }
-
-//    if(atomic_read(&son_debug_enable)){
-//        trace_printk("son_pbscand - scan enable flag is 1 start scanning \n");
-//    }
+#if SON_DEBUG_ENABLE
+    if(atomic_read(&son_debug_enable)){
+        trace_printk("son_pbscand - scan enable flag is 1 start scanning \n");
+    }
+#endif    
     return 1;   
 }
 
@@ -223,14 +183,15 @@ static int scan_pageblock(struct son_scand_control *sc, unsigned long low_pfn,
 
     return 0;
 }
-
+#if 0
 #define block_start_pfn(pfn, order)	round_down(pfn, 1UL << (order))
 #define block_end_pfn(pfn, order)	ALIGN((pfn) + 1, 1UL << (order))
 #define pageblock_start_pfn(pfn)	block_start_pfn(pfn, pageblock_order)
-// low_pfn 이 속한 page block 내의 start pfn
+/* start page frame number within page block */
 #define pageblock_end_pfn(pfn)		block_end_pfn(pfn, pageblock_order)
-// low_pfn 이 속한 page block 내의 end pfn
-
+/* end page frame number within page block */
+#endif
+/* INFO - move above functions to internal.h  */
 
 static int scan_zone(struct zone *zone, struct son_scand_control *sc, unsigned long *index)
 {
@@ -293,7 +254,6 @@ static int son_scand_pbstate_do_work(pg_data_t *pgdat)
         scan_zone(zone, &sc, &index); 
     }
 
-//    trace_printk("son_pbscand_comple,free(%lu), umov(%lu), mov(%lu), reclm(%lu), hato(%lu), iso(%lu), inv(%lu),compact(%lu) \n", sc.pb_stat[PB_FREE], sc.pb_stat[PB_UNMOVABLE],sc.pb_stat[PB_MOVABLE],sc.pb_stat[PB_RECLAIMABLE],sc.pb_stat[PB_HIGHATOMIC],sc.pb_stat[PB_ISOLATE],sc.pb_stat[PB_INVALID],sc.pb_stat[PB_COMPACT]);
     trace_printk("son_pbscand_comple,%lu,%lu,%lu \n", sc.pb_stat[PB_FREE], sc.pb_stat[PB_INACTIVE],sc.pb_stat[PB_ACTIVE]);
 
     return 0;
@@ -315,19 +275,55 @@ static int son_kthread_pbstate(void *p)
     return 0;
 }
 
+#endif
+/* endof SON_PBSCAND_ENABLE  */
+
+#if SON_REFSCAND_ENABLE 
+/* if page reference count scanning option is enabled compile it  */
+
+struct son_scand_refcount_manager {
+    unsigned int mm_count;
+    struct list_head son_scand_refcount_list;    
+};
+
+struct son_scand_refcount_manager son_manager;
+
+DEFINE_SPINLOCK(son_scand_refcount_list_lock);
+DECLARE_WAIT_QUEUE_HEAD(son_scand_refcount_wait);
+static unsigned int son_scand_refcount_sleep_millisecs = 6000;
+
+void son_kthread_refcount_add_entry(struct mm_struct *mm)
+{
+	spin_lock(&son_scand_refcount_list_lock);
+    son_manager.mm_count++;
+	list_add_tail_rcu(&mm->son_scand_refcount_link, &son_manager.son_scand_refcount_list);
+	spin_unlock(&son_scand_refcount_list_lock);
+}
+
+void son_kthread_refcount_del_entry(struct mm_struct *mm)
+{
+	spin_lock(&son_scand_refcount_list_lock);
+    son_manager.mm_count--;    
+	list_del_rcu(&mm->son_scand_refcount_link);
+	spin_unlock(&son_scand_refcount_list_lock);
+}
+
 
 static int son_scand_refcount_check(void)
 {
     if(!atomic_read(&son_scan_refcount_enable)){        
-//        if(atomic_read(&son_debug_enable)){
-//            trace_printk("son_refscand - scan enable flag is 0 stop scanning \n"); 
-//        }
+#if SON_DEBUG_ENABLE
+        if(atomic_read(&son_debug_enable)){
+            trace_printk("son_refscand - scan enable flag is 0 stop scanning \n"); 
+        }
+#endif        
         return 0;
     }
-
-//    if(atomic_read(&son_debug_enable)){
-//        trace_printk("son_refscand - refcount scan enable flag is 1 start scanning \n");
-//    }
+#if SON_DEBUG_ENABLE
+    if(atomic_read(&son_debug_enable)){
+        trace_printk("son_refscand - refcount scan enable flag is 1 start scanning \n");
+    }
+#endif
     return 1;   
 }
 
@@ -365,7 +361,7 @@ static int son_pte_walker(pte_t *pte, unsigned long addr,
             //  - idle flag clear - idle page가 아니므로
             //  - youg flag set - page reclaim 에 사용을 위해
 
-            utilmap = &page->page_util_info;	
+            utilmap = &page->page_util_ref_info;	
             // page 당 struct utilmap_node 를 가지고 있으며 
             // 이 struct 를 통해 해당 page 의 접근 빈도 및 
             // huge page 영역 내의 할당 상태를 관리
@@ -408,6 +404,7 @@ static int son_pte_walker(pte_t *pte, unsigned long addr,
 			    frequency=bitmap_weight(utilmap->freq_bitmap,FREQ_BITMAP_SIZE);
 //                trace_printk("son_refscand,bp_pfn:%lu,freq:%d \n",pfn,frequency);
 //                trace_printk("son_refscand,bp,%lu,%d \n",pfn,frequency);
+//                #
 			}
 
 			set_page_idle(page);
@@ -451,7 +448,7 @@ static int son_pmd_walker(pmd_t *pmd, unsigned long addr,
             //  - youg flag set - page reclaim 에 사용을 위해
 
 			VM_BUG_ON(!PageCompound(page));
-            utilmap = &page->page_util_info;	
+            utilmap = &page->page_util_ref_info;	
             // page 당 struct utilmap_node 를 가지고 있으며 
             // 이 struct 를 통해 해당 page 의 접근 빈도 및 
             // huge page 영역 내의 할당 상태를 관리
@@ -563,8 +560,9 @@ static int son_scand_refcount_do_work(pg_data_t *pgdat)
     walker_node_stats->idle_hpage_count=0;
     walker_node_stats->idle_bpage_count=0;
 
-
-//    trace_printk("son_refscand,start,-1,-1\n");
+#if SON_DEBUG_ENABLE
+    trace_printk("son_refscand,start,-1,-1\n");
+#endif   
     // Scanning per-application anonymous pages
 	list_for_each_entry_rcu(mm, &son_manager.son_scand_refcount_list, son_scand_refcount_link) {
 
@@ -607,8 +605,9 @@ static int son_scand_refcount_do_work(pg_data_t *pgdat)
         mmput(mm);
         put_task_struct(tsk);
     }
-
-//    trace_printk("son_refscand,end,-1,-1,%lu,%lu,%lu,%lu \n",walker_node_stats->total_hpage_count,walker_node_stats->idle_hpage_count,walker_node_stats->total_bpage_count,walker_node_stats->idle_bpage_count);
+#if SON_DEBUG_ENABLE
+    trace_printk("son_refscand,end,-1,-1,%lu,%lu,%lu,%lu \n",walker_node_stats->total_hpage_count,walker_node_stats->idle_hpage_count,walker_node_stats->total_bpage_count,walker_node_stats->idle_bpage_count);
+#endif
     return 0;
 
 unlock_exit:
@@ -636,7 +635,7 @@ static void son_scand_refcount_wait_work(void)
     else
         wait_event_freezable(son_scand_refcount_wait,son_scand_refcount_wait_event());
 }
-#define VERSION 1
+#define REFSCAND_SLEEP_PERIODICAL 0
 static int son_kthread_refcount(void *p)
 {
 	pg_data_t *pgdat = (pg_data_t*)p;
@@ -647,19 +646,21 @@ static int son_kthread_refcount(void *p)
     son_manager.mm_count=0;
 
     while(!kthread_should_stop()){
-#if VERSION 
+#if REFSCAND_SLEEP_PERIODICAL
+        son_scand_refcount_do_work(pgdat);
+        son_scand_refcount_wait_work();
+#else
         wait_event_freezable(son_scand_refcount_wait,son_scand_refcount_check());
         son_scand_refcount_do_work(pgdat);
         atomic_set(&son_scan_refcount_enable,SON_DISABLE);
-#else
-        son_scand_refcount_do_work(pgdat);
-        son_scand_refcount_wait_work();
 #endif
     }
 
     return 0;
 }
 
+#endif
+/* end of SON_REFSCAND_ENABLE  */
 
 static int son_scand_kthread_run(int nid)
 {
@@ -667,7 +668,7 @@ static int son_scand_kthread_run(int nid)
 
     // thp_enabled
     // FIXME
-
+#if SON_PBSCAND_ENABLE 
     if(pgdat->kscand_pbstate)
         goto out;
     
@@ -680,10 +681,14 @@ static int son_scand_kthread_run(int nid)
         goto out;
     }
 
-//    if(atomic_read(&son_debug_enable)){
-//        trace_printk("son - son_kthread_pbstate kernel thread is created \n");
-//    }
-  
+#if SON_DEBUG_ENABLE
+    if(atomic_read(&son_debug_enable)){
+        trace_printk("son - son_kthread_pbstate kernel thread is created \n");
+    }
+#endif
+#endif
+
+#if SON_REFSCAND_ENABLE
     if(pgdat->kscand_refcount)
         goto out;
 
@@ -700,16 +705,77 @@ static int son_scand_kthread_run(int nid)
 
     if(!list_empty(&son_manager.son_scand_refcount_list))
         wake_up_interruptible(&son_scand_refcount_wait);
-    
-//    if(atomic_read(&son_debug_enable)){
-//        trace_printk("son - son_kthread_refcount kernel thread is created \n");
-//    }
-
-
+ 
+#if SON_DEBUG_ENABLE  
+    if(atomic_read(&son_debug_enable)){
+        trace_printk("son - son_kthread_refcount kernel thread is created \n");
+    }
+#endif
+#endif
 out:
     return 0;
 }
 
+#if SON_PBSTAT_ENABLE 
+
+pb_stat_t calc_pbutil_level(unsigned char used_pages)
+{
+    pb_stat_t ret = SON_PB_MAX;
+    unsigned char used_percentage;
+
+    if(used_pages!=0){
+        used_percentage=used_pages*10/512;
+        if(used_percentage == 0)
+            used_percentage=1;
+    }else{
+        used_percentage=0;
+    }
+
+    switch(used_percentage){
+            /* page  block is... */
+        case 0 :
+            /* 0%        used    */
+            ret = SON_PB_WHITE;
+            break;
+        case 1:
+        case 2:
+            /* 1% ~ 29%  used    */
+            ret = SON_PB_BLUE;
+        case 3:
+        case 4:
+        case 5:
+            /* 30% ~ 59% used    */
+            ret = SON_PB_GREEN;            
+            break;
+        case 6:
+        case 7:
+        case 8:
+        case 9:           
+            /* 60% ~ 99% used    */
+            ret = SON_PB_YELLOW;
+            break;
+        case 10:
+            /* 100%      used  */
+            ret = SON_PB_RED;
+            break;
+    }
+    return ret;
+}
+
+pbutil_node_t *son_pbutil_node_delete(pbutil_tree_t *pbutil_tree, unsigned long pb_pfn_start)
+{
+	return radix_tree_delete(&pbutil_tree->pbutil_tree_root, pb_pfn_start);
+}
+
+pbutil_node_t *son_pbutil_node_lookup(pbutil_tree_t *pbutil_tree, unsigned long pb_pfn_start)
+{
+	return radix_tree_lookup(&pbutil_tree->pbutil_tree_root, pb_pfn_start);
+}
+
+int son_pbutil_node_insert(pbutil_tree_t *pbutil_tree, unsigned long pb_pfn_start, pbutil_node_t *pbutil_node)
+{
+	return radix_tree_insert(&pbutil_tree->pbutil_tree_root, pb_pfn_start, pbutil_node);
+}
 #endif
 
 static int __init son_scand_init(void)

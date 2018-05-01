@@ -20,6 +20,7 @@
 #include <asm/page.h>
 
 #ifdef CONFIG_SON 
+#include <linux/radix-tree.h>
 #include <son/son.h>
 #endif
 
@@ -488,9 +489,12 @@ struct zone {
 	/* Set to true when the PG_migrate_skip bits should be cleared */
 	bool			compact_blockskip_flush;
 #endif
-
 	bool			contiguous;
-
+#ifdef CONFIG_SON 
+#if SON_PBSTAT_ENABLE
+    pbutil_list_t   son_pbutil_list[SON_PB_MAX];    
+#endif
+#endif
 	ZONE_PADDING(_pad3_)
 	/* Zone statistics */
 	atomic_long_t		vm_stat[NR_VM_ZONE_STAT_ITEMS];
@@ -699,9 +703,24 @@ typedef struct pglist_data {
 	struct per_cpu_nodestat __percpu *per_cpu_nodestats;
 	atomic_long_t		vm_stat[NR_VM_NODE_STAT_ITEMS]; 
 #ifdef CONFIG_SON
+    /* 
+     * VERSION-1 
+     */
+#if SON_PBSCAND_ENABLE    
     struct task_struct *kscand_pbstate;
+#endif
+
+#if SON_REFSCAND_ENABLE
     struct task_struct *kscand_refcount;
     struct son_scand_refcount_stats son_node_scand_stats;
+#endif
+
+#if SON_PBSTAT_ENABLE
+    /* 
+     * VERSION-2 
+     */
+    pbutil_tree_t   son_pbutil_tree;
+#endif
 #endif
 } pg_data_t;
 

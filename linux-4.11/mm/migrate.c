@@ -1308,6 +1308,8 @@ int migrate_pages(struct list_head *from, new_page_t get_new_page,
 	int rc;
 
 #ifdef CONFIG_SON     
+#if SON_REFSCAND_ENABLE
+
     struct compact_control *cc = NULL;    
     struct page *page_middle_pb;
     page_utilmap_t *utilmap;
@@ -1316,6 +1318,8 @@ int migrate_pages(struct list_head *from, new_page_t get_new_page,
     if(reason == MR_COMPACTION){
         cc = (struct compact_control*)private;
     }
+
+#endif
 #endif
 
 	if (!swapwrite)
@@ -1326,8 +1330,12 @@ int migrate_pages(struct list_head *from, new_page_t get_new_page,
 
 		list_for_each_entry_safe(page, page2, from, lru) {
 			cond_resched();
-#ifdef CONFIG_SON
+#ifdef CONFIG_SON 
+#if SON_REFSCAND_ENABLE
+
             page_middle_pb = page; 
+
+#endif
 #endif
 
 			if (PageHuge(page))
@@ -1351,14 +1359,18 @@ int migrate_pages(struct list_head *from, new_page_t get_new_page,
                 // again 이 아니면 list 에서 삭제
 				nr_succeeded++;
 #ifdef CONFIG_SON 
+#if SON_REFSCAND_ENABLE
+
                 if(reason == MR_COMPACTION){
                     if(is_pageblock_empty(page_middle_pb,cc))
                         cc->nr_clearedpb++;
                     pfn_migrated = page_to_pfn(page);
-                    utilmap = &page->page_util_info;
+                    utilmap = &page->page_util_ref_info;
                     frequency = bitmap_weight(utilmap->freq_bitmap,FREQ_BITMAP_SIZE);
                     trace_printk("compaction,%lu,%d \n",pfn_migrated,frequency);
                 }
+
+#endif
 #endif
 				break;
 			default:

@@ -30,17 +30,21 @@ struct mem_cgroup;
 
 #ifdef CONFIG_SON
 
-#define FREQ_BITMAP_SIZE 16
+#if SON_REFSCAND_ENABLE
+
+#define FREQ_BITMAP_SIZE 4
 #define PRI_HISTORY_SIZE 3
 
 /* structure for tracking temporal utilization */
 typedef struct son_page_utilmap_node {
-	struct list_head link;
+//	struct list_head link;
     DECLARE_BITMAP(freq_bitmap, FREQ_BITMAP_SIZE);
     // page 마다 8 bit 만큼의 bitmap 생성
-	unsigned long addr;
 	struct page *page;
 } page_utilmap_t;
+
+#endif
+
 #endif
 
 
@@ -234,8 +238,18 @@ struct page {
 #endif 
 
 #ifdef CONFIG_SON 
-    int pb_state_clear;
-    page_utilmap_t page_util_info;
+
+#if SON_REFSCAND_ENABLE
+    page_utilmap_t page_util_ref_info;
+    /* bitmap for tracking page reference count in  
+     * son_refscand kernel thread */
+#endif
+
+#if SON_PBSTAT_ENABLE
+    struct  list_head   pbutil_level;	
+    /* linked list in zone->  */
+#endif
+
 #endif
 
 #ifdef LAST_CPUPID_NOT_IN_PAGE_FLAGS
@@ -521,9 +535,16 @@ struct mm_struct {
 	atomic_long_t hugetlb_usage;
 #endif
 	struct work_struct async_put_work; 
-#ifdef CONFIG_SON
+
+#ifdef CONFIG_SON 
+
+#if SON_REFSCAND_ENABLE
     struct list_head son_scand_refcount_link;
+    // list_head to check referenced page in son_refscand kernel thread
 	struct son_scand_refcount_stats son_mm_scand_stats;
+    // for debugging.. 
+#endif 
+
 #endif
 };
 

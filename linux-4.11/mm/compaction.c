@@ -2060,13 +2060,16 @@ static void kcompactd_do_work(pg_data_t *pgdat)
 
 void wakeup_kcompactd(pg_data_t *pgdat, int order, int classzone_idx)
 {
+#if SON_DEBUG_ENABLE
     if(atomic_read(&son_debug_enable))
         trace_printk("etc,wakeup_kcompactd, check 1 : order-0 ? %d \n",order);
+#endif
 
 	if (!order){
+#if SON_DEBUG_ENABLE
         if(atomic_read(&son_debug_enable))
             trace_printk("etc,wakeup_kcompactd, check 1 : order-0 ? %d -> fail(free : %lu) \n",order,global_page_state(NR_FREE_PAGES));
-
+#endif
 		return;
     }
 

@@ -1655,6 +1655,12 @@ static inline pmd_t *pmd_alloc(struct mm_struct *mm, pud_t *pud, unsigned long a
 }
 #endif /* CONFIG_MMU && !__ARCH_HAS_4LEVEL_HACK */
 
+#ifdef CONFIG_SON 
+#if SON_PBSTAT_ENABLE
+void __init son_kmem_cache_init(void);
+#endif
+#endif
+
 #if USE_SPLIT_PTE_PTLOCKS
 #if ALLOC_SPLIT_PTLOCKS
 void __init ptlock_cache_init(void);
@@ -1730,6 +1736,11 @@ static inline void pgtable_init(void)
 {
 	ptlock_cache_init();
 	pgtable_cache_init();
+#ifdef CONFIG_SON
+#if SON_PBSTAT_ENABLE
+    son_kmem_cache_init();
+#endif
+#endif
 }
 
 static inline bool pgtable_page_ctor(struct page *page)

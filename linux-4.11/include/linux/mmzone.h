@@ -20,7 +20,7 @@
 #include <asm/page.h>
 
 #ifdef CONFIG_SON 
-#include <linux/radix-tree.h>
+//#include <linux/radix-tree.h>
 #include <son/son.h>
 #endif
 

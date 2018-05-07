@@ -2,24 +2,22 @@
 #define _SON_H_
 
 //#include <linux/mm.h>
-#include <linux/radix-tree.h>
 
 #define SON_SUCCESS     0
 #define SON_ENABLE      1
 #define SON_DISABLE     0
-
-// debug
-
-/* 
- * VERSION 1.
- * paper's monitoring kernel thread related variables
- */
 
 #define SON_PBSCAND_ENABLE      1
 #define SON_REFSCAND_ENABLE     0
 #define SON_DEBUG_ENABLE        0
 #define SON_PBSTAT_ENABLE       1
 
+
+/* 
+ * VERSION 1. Monitoring phase
+ * paper's monitoring kernel thread related variables
+ */
+#if SON_PBSCAND_ENABLE
 /* page block usage info or state info which 
  * is used in son_pbscand kernel thread  */
 typedef enum {                  /* page is */
@@ -52,6 +50,22 @@ struct son_scand_control {
     // scanning status;
 };
 
+extern atomic_t son_scan_pbstate_enable;	
+/* atomic variable to swith on page block status scanning kernel thread(son_pbscand) 
+ * usage : echo 1 > /proc/son/scan_pbstate_enable */
+
+extern wait_queue_head_t son_scand_pbstate_wait; 
+/* wait queue for page block status scanning kernel theread.(son_pbscand) */
+#endif
+
+#if SON_DEBUG_ENABLE
+extern atomic_t son_debug_enable;	
+/* atomic variable to swith on debugging message which can be seen in ftrace buffer 
+ * usage : echo 1 > /proc/son/debug */ 
+#endif
+
+#if SON_REFSCAND_ENABLE
+
 /* page block reference count scanning kernel thread's scan result status  */
 typedef struct son_scand_refcount_stats {
     unsigned long idle_bpage_count;     /* not accessed base page(ACCESSED bit is not setted in pte) */
@@ -60,30 +74,37 @@ typedef struct son_scand_refcount_stats {
     unsigned long total_hpage_count;    /* total huge page count */    
 }son_scand_stats_t;
 
-extern spinlock_t son_scan_refcount_list_lock;
-/* spinlock which is used in mm_struct list for reference count scanning kernel thread  */
-extern atomic_t son_scan_pbstate_enable;	
-/* atomic variable to swith on page block status scanning kernel thread(son_pbscand) 
- * usage : echo 1 > /proc/son/scan_pbstate_enable */
-extern atomic_t son_debug_enable;	
-/* atomic variable to swith on debugging message which can be seen in ftrace buffer 
- * usage : echo 1 > /proc/son/debug */ 
+
 extern atomic_t son_scan_refcount_enable;
 /* atomic variable to swith on reference count scanning kernel thread(son_refscand)
  * usage : echo 1 > /proc/son/scan_refcount_enable */
-extern wait_queue_head_t son_scand_pbstate_wait; 
-/* wait queue for page block status scanning kernel theread.(son_pbscand) */
+
+extern spinlock_t son_scan_refcount_list_lock;
+/* spinlock which is used in mm_struct list for reference count scanning kernel thread  */
+
 extern wait_queue_head_t son_scand_refcount_wait;
 /* wait queue for reference cout scanning kernel theread.(son_refscand) */
+
 void son_kthread_refcount_add_entry(struct mm_struct *mm); 
 /* add mm_struct to reference count scanning kernel thread's mm_struct list */
 void son_kthread_refcount_del_entry(struct mm_struct *mm);
 /* remove mm_struct from reference count scanning kernel thread's mm_struct list */
 
+#endif
+
 /* 
- * VERSION 2.
+ * VERSION 2. New Design phase
  * paper's new design of kcompactd kernel thread related variables
  */
+#if SON_PBSTAT_ENABLE
+
+#include <linux/radix-tree.h>
+
+#define SON_PBSTAT_SUCCESS                  SON_SUCCESS
+#define SON_PBSTAT_ERR_BUDDY                -1
+#define SON_PBSTAT_ERR_MEMALLOC             -2
+#define SON_PBSTAT_ERR_NODE_NOT_PRESENT     -3
+
 typedef enum {                  /* page block is ... */
     SON_PB_WHITE,               /* 0%        used    */
     SON_PB_BLUE,                /* 1%  ~ 29% used    */
@@ -94,17 +115,29 @@ typedef enum {                  /* page block is ... */
     SON_PB_MAX                  /* max entry  */
 } pb_stat_t;
 
+extern char * const pbstat_names[SON_PB_MAX];
+
+#define PBUTIL_BMAP_SIZE    512
+
+typedef enum {                  
+    SON_PB_UNMOVABLE,           
+    SON_PB_MOVABLE,             
+    SON_PB_RECLAIMABLE,
+    SON_PB_BUDDY,               
+} pg_stat_t;
+
 /* page block utilization info node for revised kcompactd */
 typedef struct son_pbutil_node_type {
-    DECLARE_BITMAP(pbutil_movable_bitmap, 512);
+    DECLARE_BITMAP(pbutil_movable_bitmap, PBUTIL_BMAP_SIZE);
     /* bitmap of used pages within page block range -> 64B */
-    unsigned char used_movable_page;    
+    unsigned long used_movable_page;    
     /* used movable pages within page block range   -> 8B  */
-    unsigned char used_unmovable_page;
+    unsigned long used_unmovable_page;
     /* used unmovable pages within page block range -> 8B  */
     pb_stat_t level;
     /* calculateed page block utilization level     -> 4B  */
 } pbutil_node_t; 
+
 /* 
  * => 84B per page block 
  * e.g. 32G system ... 
@@ -137,13 +170,22 @@ extern spinlock_t son_pbutil_tree_lock;
 /* spinlock which is used in pbutil_node_t radix tree for kcompactd kernel thread  */
 pbutil_node_t *son_pbutil_node_alloc(void);
 /* allocate pbutil_node_t to insert pb usage radix tree  */
+void son_pbutil_node_free(pbutil_node_t *node);
+/* free pbutil_node_t   */
 pbutil_node_t *son_pbutil_node_delete(pbutil_tree_t *pbutil_tree, unsigned long pb_pfn_start);
 /* delete pbutil_node_t from pb usage radix tree because whole page block is free state  */
 pbutil_node_t *son_pbutil_node_lookup(pbutil_tree_t *pbutil_tree, unsigned long pb_pfn_start);
 /* search pbutil_node_t to get pb utilization  */
 int son_pbutil_node_insert(pbutil_tree_t *pbutil_tree, unsigned long pb_pfn_start, pbutil_node_t *pbutil_node);
 /* insert pbutil_node_t to pb usage radix tree when pb get out of free state */
-pb_stat_t calc_pbutil_level(unsigned char used_pages);
+pb_stat_t calc_pbutil_level(unsigned long used_pages);
 /* calculate page block utilization */
+
+int son_pbutil_update_alloc(struct page *page, unsigned int order);
+/* update page block utilization status in page allocating phase  */
+int son_pbutil_update_free(struct page *page, unsigned int order);
+/* update page block utilization status in page freeing phase  */
+
+#endif
 
 #endif

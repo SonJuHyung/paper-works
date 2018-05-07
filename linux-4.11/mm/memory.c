@@ -149,7 +149,15 @@ struct kmem_cache *son_pbutil_node_cachep;
 
 void __init son_kmem_cache_init(void)
 {
+    
 	son_pbutil_node_cachep = kmem_cache_create("son_pbutil_node", sizeof(pbutil_node_t), 0, SLAB_PANIC, NULL);
+            
+           /* 
+	son_pbutil_node_cachep = kmem_cache_create("son_pbutil_node", 
+            sizeof(pbutil_node_t), 
+            0, (SLAB_RECLAIM_ACCOUNT | SLAB_MEM_SPREAD), NULL);
+            */
+
     /* create object for pbstat radix tree  */
 }
 
@@ -157,12 +165,24 @@ void __init son_kmem_cache_init(void)
 pbutil_node_t *son_pbutil_node_alloc(void)
 {
     pbutil_node_t *node;
-	node  = kmem_cache_zalloc(son_pbutil_node_cachep, GFP_ATOMIC);
-	if (!node)
-		return NULL;
+
+    node  = kmem_cache_zalloc(son_pbutil_node_cachep, GFP_ATOMIC);
+    if(!node)
+        return NULL;
+
+    bitmap_clear(node->pbutil_movable_bitmap, 0, PBUTIL_BMAP_SIZE);
+    node->used_movable_page = 0;
+    node->used_unmovable_page = 0;
+    node->level = SON_PB_MAX;
 
 	return node;
 }
+
+void son_pbutil_node_free(pbutil_node_t *node)
+{
+	kmem_cache_free(son_pbutil_node_cachep, node);
+}
+
 #endif
 #endif
 

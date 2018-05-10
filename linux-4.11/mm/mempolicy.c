@@ -2017,6 +2017,18 @@ retry_cpuset:
 	nmask = policy_nodemask(gfp, pol);
 	zl = policy_zonelist(gfp, pol, node);
 	page = __alloc_pages_nodemask(gfp, order, zl, nmask);
+#if 0
+#ifdef CONFIG_SON
+#if SON_PBSTAT_ENABLE
+    if(page){
+        pbutil_result = son_pbutil_update_alloc(page,order);
+        if(pbutil_result != SON_PBSTAT_SUCCESS)
+            trace_printk("err - %d \n", pbutil_result);
+    }
+#endif
+#endif
+#endif
+
 	mpol_cond_put(pol);
 out:
 	if (unlikely(!page && read_mems_allowed_retry(cpuset_mems_cookie)))

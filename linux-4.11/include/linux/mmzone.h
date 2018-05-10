@@ -493,6 +493,9 @@ struct zone {
 #ifdef CONFIG_SON 
 #if SON_PBSTAT_ENABLE
     pbutil_list_t   son_pbutil_list[SON_PB_MAX];    
+    spinlock_t pbutil_list_lock;
+
+    /* spinlock which is used in page linked list for kcompactd kernel thread */  
 #endif
 #endif
 	ZONE_PADDING(_pad3_)

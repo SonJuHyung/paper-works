@@ -102,8 +102,9 @@ void son_kthread_refcount_del_entry(struct mm_struct *mm);
 
 #define SON_PBSTAT_SUCCESS                  SON_SUCCESS
 #define SON_PBSTAT_ERR_BUDDY                -1
-#define SON_PBSTAT_ERR_MEMALLOC             -2
-#define SON_PBSTAT_ERR_NODE_NOT_PRESENT     -3
+#define SON_PBSTAT_ERR_NOT_BUDDY            -2
+#define SON_PBSTAT_ERR_MEMALLOC             -3
+#define SON_PBSTAT_ERR_NODE_NOT_PRESENT     -4
 
 typedef enum {                  /* page block is ... */
     SON_PB_WHITE,               /* 0%        used    */
@@ -134,15 +135,19 @@ typedef struct son_pbutil_node_type {
     /* used movable pages within page block range   -> 8B  */
     unsigned long used_unmovable_page;
     /* used unmovable pages within page block range -> 8B  */
+    unsigned long pb_head_pfn;
+    /* head page frame number of page block 
+     * which is used as key in radix tree           -> 8B  */
     pb_stat_t level;
     /* calculateed page block utilization level     -> 4B  */
+    struct list_head pbutil_level;
 } pbutil_node_t; 
 
 /* 
- * => 84B per page block 
+ * => 92B per page block 
  * e.g. 32G system ... 
  *   -> 32G(32768 MB) -> 16384 entry -> 
- *      16384 entry * 84B -> 1.3125 MB
+ *      16384 entry * 92 B -> 1507328 B -> 1.4375 MB 
  * FIXME 
  *  - consider changing data type of used_movable_page 
  *    and used_unmovable_page to unsigned char
@@ -162,6 +167,7 @@ typedef struct son_pbutil_tree_type {
     /* page status tracking radix tree  */
     spinlock_t pbutil_tree_lock;
     /* spinlock which is used in pbutil_node_t radix tree for searching in page alloc/free */
+    int node_count;
 } pbutil_tree_t;
 
 extern struct kmem_cache *son_pbutil_node_cachep;

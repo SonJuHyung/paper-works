@@ -246,7 +246,6 @@ struct page {
 #endif
 
 #if SON_PBSTAT_ENABLE
-    struct  list_head   pbutil_level;	
     int mgtype;
     /* linked list in zone->  */
 #endif

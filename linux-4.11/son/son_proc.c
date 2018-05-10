@@ -62,26 +62,15 @@ static ssize_t son_write_pbstate_enable(struct file *filep,
 #if SON_PBSCAND_ENABLE
                 wake_up_interruptible(&son_scand_pbstate_wait);
 #endif
-//                if(atomic_read(&son_debug_enable)){
-//                    trace_printk("son - page reference counting is enabled \n"); 
-//                    trace_printk("son - wakeup son_scand \n"); 
-//                }
             }
         }else if(temp_write == 0){
             if(atomic_read(&son_scan_pbstate_enable)){
                 /* if current scanning state is enabled make it disabled */ 
                 atomic_set(&son_scan_pbstate_enable,SON_DISABLE);
 
-//                if(atomic_read(&son_debug_enable)){
-//                    trace_printk("son - page reference counting is disabled \n");
-//                    trace_printk("son - sleep son_scand \n"); 
-//                }
             }
         }else if(temp_write < 0){
             /* error stat : data from user is negative value */
-//            if(atomic_read(&son_debug_enable)){
-//                trace_printk("son - (err)page reference counting invalid write \n"); 
-//            }
             return -EINVAL;
         }
     }
@@ -273,8 +262,8 @@ static void pbstat_show_print(struct seq_file *m, pg_data_t *pgdat, struct zone 
 {
 	int index;
 
-	seq_printf(m, "Node %d, zone %8s - ", pgdat->node_id, zone->name);
-    
+	seq_printf(m, "Node %d(%d), zone %8s - ", pgdat->node_id, pgdat->son_pbutil_tree.node_count, zone->name);
+
 	for (index = 0; index < SON_PB_MAX; ++index)
 		seq_printf(m, "%10s(%5d) ", pbstat_names[index],zone->son_pbutil_list[index].cur_count);
         
@@ -392,12 +381,12 @@ static int __init son_proc_init(void)
 
 #if SON_PBSTAT_ENABLE
     /*  page block utilization info related entry  */
-	son_pbstat_show_data = proc_create("scan_pbstat_show", 0, son_parent_dir, &son_pbstat_show_enable_ops);
+	son_pbstat_show_data = proc_create("pbstat_info_show", 0, son_parent_dir, &son_pbstat_show_enable_ops);
     if(!son_pbstat_show_data)
         goto out;
 
     /*  page block utilization info related entry  */
-	son_pbstat_show_data_raw = proc_create("scan_pbstat_show_raw", 0, son_parent_dir, &son_pbstat_show_raw_enable_ops);
+	son_pbstat_show_data_raw = proc_create("pbstat_info_show_raw", 0, son_parent_dir, &son_pbstat_show_raw_enable_ops);
     if(!son_pbstat_show_data_raw)
         goto out;
 

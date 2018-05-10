@@ -150,7 +150,8 @@ struct kmem_cache *son_pbutil_node_cachep;
 void __init son_kmem_cache_init(void)
 {
     
-	son_pbutil_node_cachep = kmem_cache_create("son_pbutil_node", sizeof(pbutil_node_t), 0, SLAB_PANIC, NULL);
+	son_pbutil_node_cachep = kmem_cache_create("son_pbutil_node", 
+            sizeof(pbutil_node_t), 0, SLAB_PANIC, NULL);
             
            /* 
 	son_pbutil_node_cachep = kmem_cache_create("son_pbutil_node", 
@@ -180,6 +181,8 @@ pbutil_node_t *son_pbutil_node_alloc(void)
 
 void son_pbutil_node_free(pbutil_node_t *node)
 {
+    node->used_movable_page = 0;
+    node->used_unmovable_page = 0;
 	kmem_cache_free(son_pbutil_node_cachep, node);
 }
 
@@ -3028,6 +3031,7 @@ static int do_anonymous_page(struct vm_fault *vmf)
 	page_add_new_anon_rmap(page, vma, vmf->address, false);
 	mem_cgroup_commit_charge(page, memcg, false, false);
 	lru_cache_add_active_or_unevictable(page, vma);
+
 setpte:
 	set_pte_at(vma->vm_mm, vmf->address, vmf->pte, entry);
 

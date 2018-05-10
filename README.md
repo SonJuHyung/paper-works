@@ -41,7 +41,17 @@ Paper work updates
     + mm/memory.c
     + mm/page_alloc.c
 
-5. TODO 
+5. page block utilization monitoring by proc.
+  + monitor page block utilizatino by color type in user space. 
+  + used seq_file interface similar to unusable free space index interface in sysfs.
+  + can be seen by procfs 
+    + cat /proc/son/pbstat_info_show 
+    + cat /proc/son/pbstat_info_show_raw (to plot graph)
+  + log   
+    + include/son/son.h
+    + son/son_proc.c 
+
+6. TODO 
   + make kcompactd to act before DC.
   + make kcompactd compaction algorithm to use page block utilize information.
   + make threshold vale similar to WMARK value.

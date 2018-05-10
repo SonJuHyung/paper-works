@@ -163,6 +163,17 @@ __alloc_zeroed_user_highpage(gfp_t movableflags,
 
 	if (page)
 		clear_user_highpage(page, vaddr);
+#if 0
+#ifdef CONFIG_SON
+#if SON_PBSTAT_ENABLE
+    if(page){
+        pbutil_result = son_pbutil_update_alloc(page,0);
+        if(pbutil_result != SON_PBSTAT_SUCCESS)
+            trace_printk("err - %d \n", pbutil_result);
+    }
+#endif
+#endif
+#endif
 
 	return page;
 }

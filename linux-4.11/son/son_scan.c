@@ -48,18 +48,8 @@ DECLARE_WAIT_QUEUE_HEAD(son_scand_pbstate_wait);
 static int son_scand_pbstate_check(void)
 {
     if(!atomic_read(&son_scan_pbstate_enable)){       
-#if SON_DEBUG_ENABLE 
-        if(atomic_read(&son_debug_enable)){
-            trace_printk("son_pbscand - scan enable flag is 0 stop scanning \n"); 
-        }
-#endif
         return 0;
     }
-#if SON_DEBUG_ENABLE
-    if(atomic_read(&son_debug_enable)){
-        trace_printk("son_pbscand - scan enable flag is 1 start scanning \n");
-    }
-#endif    
     return 1;   
 }
 
@@ -312,18 +302,8 @@ void son_kthread_refcount_del_entry(struct mm_struct *mm)
 static int son_scand_refcount_check(void)
 {
     if(!atomic_read(&son_scan_refcount_enable)){        
-#if SON_DEBUG_ENABLE
-        if(atomic_read(&son_debug_enable)){
-            trace_printk("son_refscand - scan enable flag is 0 stop scanning \n"); 
-        }
-#endif        
         return 0;
     }
-#if SON_DEBUG_ENABLE
-    if(atomic_read(&son_debug_enable)){
-        trace_printk("son_refscand - refcount scan enable flag is 1 start scanning \n");
-    }
-#endif
     return 1;   
 }
 
@@ -560,9 +540,6 @@ static int son_scand_refcount_do_work(pg_data_t *pgdat)
     walker_node_stats->idle_hpage_count=0;
     walker_node_stats->idle_bpage_count=0;
 
-#if SON_DEBUG_ENABLE
-    trace_printk("son_refscand,start,-1,-1\n");
-#endif   
     // Scanning per-application anonymous pages
 	list_for_each_entry_rcu(mm, &son_manager.son_scand_refcount_list, son_scand_refcount_link) {
 
@@ -605,9 +582,6 @@ static int son_scand_refcount_do_work(pg_data_t *pgdat)
         mmput(mm);
         put_task_struct(tsk);
     }
-#if SON_DEBUG_ENABLE
-    trace_printk("son_refscand,end,-1,-1,%lu,%lu,%lu,%lu \n",walker_node_stats->total_hpage_count,walker_node_stats->idle_hpage_count,walker_node_stats->total_bpage_count,walker_node_stats->idle_bpage_count);
-#endif
     return 0;
 
 unlock_exit:
@@ -681,11 +655,6 @@ static int son_scand_kthread_run(int nid)
         goto out;
     }
 
-#if SON_DEBUG_ENABLE
-    if(atomic_read(&son_debug_enable)){
-        trace_printk("son - son_kthread_pbstate kernel thread is created \n");
-    }
-#endif
 #endif
 
 #if SON_REFSCAND_ENABLE
@@ -706,11 +675,6 @@ static int son_scand_kthread_run(int nid)
     if(!list_empty(&son_manager.son_scand_refcount_list))
         wake_up_interruptible(&son_scand_refcount_wait);
  
-#if SON_DEBUG_ENABLE  
-    if(atomic_read(&son_debug_enable)){
-        trace_printk("son - son_kthread_refcount kernel thread is created \n");
-    }
-#endif
 #endif
 out:
     return 0;
@@ -720,7 +684,7 @@ out:
 
 pb_stat_t calc_pbutil_level(unsigned long used_pages)
 {
-    pb_stat_t ret = SON_PB_MAX;
+    pb_stat_t ret = SON_PB_RED;
     unsigned long used_percentage;
 
     if(used_pages!=0){
@@ -758,6 +722,8 @@ pb_stat_t calc_pbutil_level(unsigned long used_pages)
             /* 100%      used  */
             ret = SON_PB_RED;
             break;
+        default:
+            ret = SON_PB_RED;
     }
     return ret;
 }
@@ -776,7 +742,30 @@ int son_pbutil_node_insert(pbutil_tree_t *pbutil_tree, unsigned long pb_pfn_star
 {
 	return radix_tree_insert(&pbutil_tree->pbutil_tree_root, pb_pfn_start, pbutil_node);
 }
+#if 0
+static void son_pbstat_add_entry(struct zone *zone, struct page *page, int level)
+{    
+    pbutil_list_t *pbutil_list = NULL;
 
+    spin_lock(&zone->pbutil_list_lock);
+    pbutil_list = &zone->son_pbutil_list[level];
+    list_add_tail(&page->pbutil_level,&pbutil_list->pbutil_list_head);
+    trace_printk("list added\n");
+    pbutil_list->cur_count++;
+    spin_unlock(&zone->pbutil_list_lock);
+}
+
+static void son_pbstat_del_entry(struct zone *zone, struct page *page, int level)
+{
+    pbutil_list_t *pbutil_list = NULL;
+
+    spin_lock(&zone->pbutil_list_lock);
+    pbutil_list = &zone->son_pbutil_list[level];
+    list_del(&page->pbutil_level);
+    pbutil_list->cur_count--;
+    spin_unlock(&zone->pbutil_list_lock);
+}
+#endif
 
 int son_pbutil_update_alloc(struct page *page, unsigned int order)
 {
@@ -787,99 +776,97 @@ int son_pbutil_update_alloc(struct page *page, unsigned int order)
     pbutil_list_t *pbutil_list = NULL, *pbutil_list_pre = NULL;   
     unsigned long pb_start_pfn, pb_end_pfn, pfn,pfn_end;
     unsigned long low_pfn, low_end_pfn;
-    pb_stat_t cur_level = SON_PB_MAX, pre_level = SON_PB_MAX;
-    int mgtype = page->mgtype;
-
-    if(PageBuddy(page)){
-        return SON_PBSTAT_ERR_BUDDY;
-    }
-
-    /* Step 1. Initialize vatiables.*/ 
+    pb_stat_t cur_level = SON_PB_WHITE, pre_level = SON_PB_WHITE;
+    int mgtype, ret = SON_PBSTAT_SUCCESS;
+    
+    /* Step 1. Initialize vatiables.*/         
     zone = page_zone(page);
+
+    mgtype = page->mgtype;
     pbutil_pgdat = zone->zone_pgdat;
     pbutil_tree = &pbutil_pgdat->son_pbutil_tree;
 
     pfn = page_to_pfn(page);          
     pfn_end = pfn + (1UL << order);
-    low_pfn = pb_start_pfn = block_start_pfn(pfn, pageblock_order); 
-    low_end_pfn = pb_end_pfn = block_end_pfn(pfn, pageblock_order);
+    pb_start_pfn = block_start_pfn(pfn, pageblock_order); 
+    pb_end_pfn = block_end_pfn(pfn, pageblock_order);
 
+    /* 
+     * Example Cases.
+     * e.g. if page block is composed of 8 pages ...
+     * case 1. single pb range
+     *      first loop) - search pfn(24) pb in radix tree
+     *       pb_start_pfn(24)    pb_end_pfn(32)
+     *            |                 |
+     *            *                 *
+     *  ... 0 0 | 0 0 0 0 1 1 1 1 | 0 0 0 0 0 0 0 0 | 0 0 0 0 0 0 0 0 | 0 0 ...
+     *                    ^         ^
+     *                    |         |
+     *               pfn(28)   pfn_end(32)
+     *           low_pfn(28)  low_end_pfn(32)
+     *
+     * case 2. twro pb range
+     *      first loop) - search pfn(24) pb in radix tree
+     *                          low_end_pfn(32)
+     *      pb_start_pfn(24)     pb_end_pfn(32)
+     *            |                 |
+     *            *                 *
+     *  ... 0 0 | 0 0 0 0 1 1 1 1 | 1 1 1 1 0 0 0 0 | 0 0 0 0 0 0 0 0 | 0 0 ...
+     *                    ^                 ^
+     *                    |                 |
+     *                pfn(28)          pfn_end(36)
+     *               low_pfn(28)
+     *
+     *      second loop) - search pfn(32) pb in radix tree
+     *                           low_pfn(32)
+     *                        pb_start_pfn(32)   pb_end_pfn(40)
+     *                              |                 |
+     *                              *                 *
+     *  ... 0 0 | 0 0 0 0 1 1 1 1 | 1 1 1 1 0 0 0 0 | 0 0 0 0 0 0 0 0 | 0 0 ...
+     *                    ^                 ^
+     *                    |                 |
+     *                pfn(28)            pfn_end(36)
+     *                                 low_end_pfn(36)
+     *
+     * case 3. three pb range (order > pageblock_order)
+     *      first loop)
+     *                          low_end_pfn(32)
+     *      pb_start_pfn(24)     pb_end_pfn(32)
+     *            |                 |
+     *            *                 *
+     *  ... 0 0 | 0 0 0 0 1 1 1 1 | 1 1 1 1 1 1 1 1 | 1 1 1 1 0 0 0 0 | 0 0 ...
+     *                    ^                                   ^
+     *                    |                                   |
+     *                   pfn(28)                          pfn_end(44)
+     *                low_pfn(28) 
+     *
+     *      second loop)
+     *                          low_pfn(32)         low_end_pfn(40)
+     *                          pb_start_pfn(32)     pb_end_pfn(40)
+     *                              |                 |
+     *                              *                 *
+     *  ... 0 0 | 0 0 0 0 1 1 1 1 | 1 1 1 1 1 1 1 1 | 1 1 1 1 0 0 0 0 | 0 0 ...
+     *                    ^                                   ^
+     *                    |                                   |
+     *                   pfn(28)                          pfn_end(44)
+     *
+     *      third loop)
+     *                                            low_pfn(40)       
+     *                                          pb_start_pfn(40)     pb_end_pfn(48)
+     *                                                |                 |
+     *                                                *                 *
+     *  ... 0 0 | 0 0 0 0 1 1 1 1 | 1 1 1 1 1 1 1 1 | 1 1 1 1 0 0 0 0 | 0 0 ...
+     *                    ^                                   ^
+     *                    |                                   |
+     *                   pfn(28)                          pfn_end(44)
+     *                                                  low_end_pfn(44)
+     */
     for(low_pfn = pb_start_pfn, low_end_pfn = pb_end_pfn; 
             pb_start_pfn < pfn_end ; 
             pb_start_pfn = pb_end_pfn,
             pb_end_pfn += pageblock_nr_pages,
             low_pfn = pb_start_pfn,
             low_end_pfn = pb_end_pfn){
-        /* 
-         * Example Cases.
-         * e.g. if page block is composed of 8 pages ...
-         * case 1. single pb range
-         *      first loop) - search pfn(24) pb in radix tree
-         *       pb_start_pfn(24)    pb_end_pfn(32)
-         *            |                 |
-         *            *                 *
-         *  ... 0 0 | 0 0 0 0 1 1 1 1 | 0 0 0 0 0 0 0 0 | 0 0 0 0 0 0 0 0 | 0 0 ...
-         *                    ^         ^
-         *                    |         |
-         *               pfn(28)   pfn_end(32)
-         *           low_pfn(28)  low_end_pfn(32)
-         *
-         * case 2. twro pb range
-         *      first loop) - search pfn(24) pb in radix tree
-         *                          low_end_pfn(32)
-         *      pb_start_pfn(24)     pb_end_pfn(32)
-         *            |                 |
-         *            *                 *
-         *  ... 0 0 | 0 0 0 0 1 1 1 1 | 1 1 1 1 0 0 0 0 | 0 0 0 0 0 0 0 0 | 0 0 ...
-         *                    ^                 ^
-         *                    |                 |
-         *                pfn(28)          pfn_end(36)
-         *               low_pfn(28)
-         *
-         *      second loop) - search pfn(32) pb in radix tree
-         *                           low_pfn(32)
-         *                        pb_start_pfn(32)   pb_end_pfn(40)
-         *                              |                 |
-         *                              *                 *
-         *  ... 0 0 | 0 0 0 0 1 1 1 1 | 1 1 1 1 0 0 0 0 | 0 0 0 0 0 0 0 0 | 0 0 ...
-         *                    ^                 ^
-         *                    |                 |
-         *                pfn(28)            pfn_end(36)
-         *                                 low_end_pfn(36)
-         *
-         * case 3. three pb range (order > pageblock_order)
-         *      first loop)
-         *                          low_end_pfn(32)
-         *      pb_start_pfn(24)     pb_end_pfn(32)
-         *            |                 |
-         *            *                 *
-         *  ... 0 0 | 0 0 0 0 1 1 1 1 | 1 1 1 1 1 1 1 1 | 1 1 1 1 0 0 0 0 | 0 0 ...
-         *                    ^                                   ^
-         *                    |                                   |
-         *                   pfn(28)                          pfn_end(44)
-         *                low_pfn(28) 
-         *
-         *      second loop)
-         *                          low_pfn(32)         low_end_pfn(40)
-         *                          pb_start_pfn(32)     pb_end_pfn(40)
-         *                              |                 |
-         *                              *                 *
-         *  ... 0 0 | 0 0 0 0 1 1 1 1 | 1 1 1 1 1 1 1 1 | 1 1 1 1 0 0 0 0 | 0 0 ...
-         *                    ^                                   ^
-         *                    |                                   |
-         *                   pfn(28)                          pfn_end(44)
-         *
-         *      third loop)
-         *                                            low_pfn(40)       
-         *                                          pb_start_pfn(40)     pb_end_pfn(48)
-         *                                                |                 |
-         *                                                *                 *
-         *  ... 0 0 | 0 0 0 0 1 1 1 1 | 1 1 1 1 1 1 1 1 | 1 1 1 1 0 0 0 0 | 0 0 ...
-         *                    ^                                   ^
-         *                    |                                   |
-         *                   pfn(28)                          pfn_end(44)
-         *                                                  low_end_pfn(44)
-         */
 
         if(pfn > pb_start_pfn){
             low_pfn = pfn;
@@ -890,20 +877,23 @@ int son_pbutil_update_alloc(struct page *page, unsigned int order)
         }
 
         /* Step 2. Search pbutil_node_t in radix tree  */ 
+        rcu_read_lock();
         pbutil_node = son_pbutil_node_lookup(pbutil_tree, pb_start_pfn);
-
+        rcu_read_unlock();
         if(!pbutil_node){
             /* ok. this page is the only allocated page within page. 
              * we need to allocate new pbutil_node_t and insert to 
              * pbutil_tree_t and add the page to pbutil_list_t */
 
             pbutil_node = son_pbutil_node_alloc();
-            if(pbutil_node){
+            if(pbutil_node){ 
+
 #if SON_DEBUG_ENABLE
-                trace_printk("pbutil_node is allocated in allocating process \n");                
-#endif
+                trace_printk("pbutil_node is allocated in page alloc process \n");                
+#endif                 
                 /* Step 3. Update pbutil_node's bitmap and page count */ 
                 if(mgtype == SON_PB_MOVABLE){
+
                     /* if current allocation is movable allocation 
                      * log status to bitmap  
                      * 
@@ -921,39 +911,49 @@ int son_pbutil_update_alloc(struct page *page, unsigned int order)
                      *    second loop -> 00001111 11111111 00000000     8
                      *    third  loop -> 00001111 11111111 11110000     4
                      */
-                    bitmap_set(pbutil_node->pbutil_movable_bitmap, low_pfn, low_end_pfn - low_pfn);
+
+                    bitmap_set(pbutil_node->pbutil_movable_bitmap, 
+                            low_pfn - pb_start_pfn, low_end_pfn - low_pfn);
                     pbutil_node->used_movable_page += (low_end_pfn - low_pfn);
                     cur_level = calc_pbutil_level(pbutil_node->used_movable_page);
+                    pbutil_node->pb_head_pfn = pb_start_pfn;
+                    INIT_LIST_HEAD(&pbutil_node->pbutil_level);
                 }else{
+
                     /* if current allocation is unmovable allocation 
                      * just increases unmovable count and doesn't 
                      * log allocation status to bitmap */
                     pbutil_node->used_unmovable_page += (low_end_pfn - low_pfn);
                     cur_level = SON_PB_UMOV;
+                    pbutil_node->pb_head_pfn = pb_start_pfn;
+                    INIT_LIST_HEAD(&pbutil_node->pbutil_level);
                 }
+
                 /* 
-                 * Step 4. insert node into pb utilization radix tree
+                 * Step 4. insert newly create pbutil_node_t to 
+                 *         page block utilization radix tree 
                  *         unmovable page doesn't have bitmap info.
                  */
                 pbutil_node->level = cur_level;
                 spin_lock(&pbutil_tree->pbutil_tree_lock);
                 son_pbutil_node_insert(pbutil_tree, pb_start_pfn, pbutil_node);
-                /* insert newly created pbutil_node_t 
-                 * to pb utilization tracking radix tree  */
+                pbutil_tree->node_count++;
                 spin_unlock(&pbutil_tree->pbutil_tree_lock); 
 
                 /* 
                  * Step 5. insert page to calculated level linked list  
                  *         SON_PB_BLUE or SON_PB_UMOV
                  */
+                spin_lock(&zone->pbutil_list_lock);
                 pbutil_list = &zone->son_pbutil_list[cur_level];
-                spin_lock(&pbutil_list->pbutil_list_lock);
-                list_add_tail(&page->pbutil_level,&pbutil_list->pbutil_list_head);
+                list_add_tail(&pbutil_node->pbutil_level,&pbutil_list->pbutil_list_head);
                 pbutil_list->cur_count++;
-                spin_unlock(&pbutil_list->pbutil_list_lock);
+                spin_unlock(&zone->pbutil_list_lock);
 
+                trace_printk("alloc new, success,pb(%lu ~ %lu),pg(%lu ~ %lu),order(%d/%lu/%lu),pbstat_names(%d) \n",pb_start_pfn, pb_end_pfn, pfn, pfn_end, order, pbutil_node->used_movable_page,pbutil_node->used_unmovable_page,cur_level);
             }else{
-                return SON_PBSTAT_ERR_MEMALLOC;
+                ret = SON_PBSTAT_ERR_MEMALLOC;
+                goto out;
             }
         }else{
 #if SON_DEBUG_ENABLE
@@ -966,11 +966,12 @@ int son_pbutil_update_alloc(struct page *page, unsigned int order)
              * current level's linked list, */
 
             /* Step 3. Update pbutil_node's bitmap and page count */ 
-            if(mgtype == SON_PB_MOVABLE){
 
+            if(mgtype == SON_PB_MOVABLE){
                 /* if current allocation is movable allocation 
                  * log status to bitmap  */
-                bitmap_set(pbutil_node->pbutil_movable_bitmap, low_pfn, low_end_pfn - low_pfn);
+                bitmap_set(pbutil_node->pbutil_movable_bitmap, 
+                        low_pfn - pb_start_pfn, low_end_pfn - low_pfn);
                 pbutil_node->used_movable_page += (low_end_pfn - low_pfn);
                 pre_level = pbutil_node->level; 
                 if(pre_level == SON_PB_UMOV)
@@ -987,63 +988,75 @@ int son_pbutil_update_alloc(struct page *page, unsigned int order)
                  * log allocation status to bitmap */
                 pbutil_node->used_unmovable_page += (low_end_pfn - low_pfn);
                 pre_level = pbutil_node->level;
-                cur_level = SON_PB_UMOV;                            
+                cur_level = SON_PB_UMOV; 
             }
 
             if(pre_level != cur_level){
                 /* if previous level is SON_PB_UMOV, can not reach here  
                  * only consider level transition between movable page block*/
 
-                pbutil_list = &zone->son_pbutil_list[cur_level];
-                pbutil_list_pre = &zone->son_pbutil_list[pre_level];
                 /* 
                  * Step 4. delete page from previous level linked list and
                  *         insert page into current level linked list.
-                 */ 
-                spin_lock(&pbutil_list_pre->pbutil_list_lock);
-                list_del(&page->pbutil_level);
+                 */                 
+                spin_lock(&zone->pbutil_list_lock);
+                pbutil_list_pre = &zone->son_pbutil_list[pre_level];
+                list_del(&pbutil_node->pbutil_level);
                 pbutil_list_pre->cur_count--;
-                spin_unlock(&pbutil_list_pre->pbutil_list_lock);
 
-                spin_lock(&pbutil_list->pbutil_list_lock);
-                list_add_tail(&page->pbutil_level,&pbutil_list->pbutil_list_head);
+                pbutil_list = &zone->son_pbutil_list[cur_level];
+                list_add_tail(&pbutil_node->pbutil_level,&pbutil_list->pbutil_list_head);
                 pbutil_list->cur_count++;
-                spin_unlock(&pbutil_list->pbutil_list_lock);
-
-                if(!pbutil_node->used_unmovable_page && !pbutil_node->used_movable_page){
-                    son_pbutil_node_delete(pbutil_tree, pb_start_pfn);
-                    son_pbutil_node_free(pbutil_node);
-                }                                   
-
-                /* 
-                 * Step 5. update current level info.
-                 */
                 pbutil_node->level = cur_level;
-            }
-        }
-        trace_printk("page alloc - %10s\n",pbstat_names[cur_level]);
+                spin_unlock(&zone->pbutil_list_lock);
 
+            }
+
+            trace_printk("alloc found, success,pb(%lu ~ %lu),pg(%lu ~ %lu),order(%d/%lu/%lu),pbstat_names(%d) \n",pb_start_pfn, pb_end_pfn, pfn, pfn_end, order, pbutil_node->used_movable_page,pbutil_node->used_unmovable_page,cur_level);
+
+#if 0
+            /* 
+             * Step 5. update radix tree.
+             */
+            if(!pbutil_node->used_unmovable_page && !pbutil_node->used_movable_page){
+                spin_lock(&pbutil_tree->pbutil_tree_lock);
+                son_pbutil_node_delete(pbutil_tree, pb_start_pfn);
+                son_pbutil_node_free(pbutil_node);
+                spin_unlock(&pbutil_tree->pbutil_tree_lock);
+            }                                   
+#endif
+        }
     }
-    return SON_PBSTAT_SUCCESS;
+out:
+    if(ret != SON_PBSTAT_SUCCESS)
+        trace_printk("alloc, error(%d), pb(%lu ~ %lu), pg(%lu ~ %lu), order(%d) \n",ret,pb_start_pfn, pb_end_pfn, pfn, pfn_end, order);
+
+    return ret;
 }
 
 int son_pbutil_update_free(struct page *page, unsigned int order)
 {
-    struct zone *zone = page_zone(page);
-    pg_data_t *pbutil_pgdat = zone->zone_pgdat;
-    pbutil_tree_t *pbutil_tree = &pbutil_pgdat->son_pbutil_tree;
+    struct zone *zone = NULL;
+    pg_data_t *pbutil_pgdat = NULL;
+    pbutil_tree_t *pbutil_tree = NULL;
     pbutil_node_t *pbutil_node = NULL;
     pbutil_list_t *pbutil_list = NULL, *pbutil_list_pre = NULL;   
     unsigned long pb_start_pfn, pb_end_pfn, pfn,pfn_end;
     unsigned long low_pfn, low_end_pfn;
-    pb_stat_t cur_level = SON_PB_MAX, pre_level = SON_PB_MAX;
-    int mgtype = page->mgtype;
+    pb_stat_t cur_level = SON_PB_WHITE, pre_level = SON_PB_WHITE;
+    int mgtype, ret = SON_PBSTAT_SUCCESS;
 
     /* Step 1. Initialize vatiables.*/
+    zone = page_zone(page);
+
+    mgtype = page->mgtype;
+    pbutil_pgdat = zone->zone_pgdat;
+    pbutil_tree = &pbutil_pgdat->son_pbutil_tree;
+
     pfn = page_to_pfn(page);          
     pfn_end = pfn + (1UL << order);
-    low_pfn = pb_start_pfn = block_start_pfn(pfn, pageblock_order); 
-    low_end_pfn = pb_end_pfn = block_end_pfn(pfn, pageblock_order);
+    pb_start_pfn = block_start_pfn(pfn, pageblock_order); 
+    pb_end_pfn = block_end_pfn(pfn, pageblock_order);
 
     for(low_pfn = pb_start_pfn, low_end_pfn = pb_end_pfn; 
             pb_start_pfn < pfn_end ; 
@@ -1061,26 +1074,32 @@ int son_pbutil_update_free(struct page *page, unsigned int order)
         }
 
         /* Step 2. Search pbutil_node_t in radix tree  */ 
+        rcu_read_lock();
         pbutil_node = son_pbutil_node_lookup(pbutil_tree, pb_start_pfn);
+        rcu_read_unlock();
         if(!pbutil_node){
             /* if page are already allocated  but doesn't have page block 
              * utilization info. ackward situation. recheck status and 
              * insert information to the radix tree. */
-
-            /* FIXME  */ 
 #if SON_DEBUG_ENABLE
             trace_printk("pbutil_node is not found in freeing process \n");                
-#endif
-            return SON_PBSTAT_ERR_NODE_NOT_PRESENT;
+#endif             
+            ret = SON_PBSTAT_ERR_NODE_NOT_PRESENT;
+            goto out;
         }else{
             /* ok. pbutil_node is found. we need to update bitmap information 
              * and allocation status.  */
+
+#if SON_DEBUG_ENABLE
+            trace_printk("pbutil_node is found in allocating process \n");                
+#endif
 
             /* Step 3. Update pbutil_node's bitmap and page count */ 
             if(mgtype == SON_PB_MOVABLE){
                 /* if current allocation is movable allocation 
                  * log status to bitmap  */
-                bitmap_clear(pbutil_node->pbutil_movable_bitmap, low_pfn, low_end_pfn - low_pfn);
+                bitmap_clear(pbutil_node->pbutil_movable_bitmap, 
+                        low_pfn - pb_start_pfn, low_end_pfn - low_pfn);
                 pbutil_node->used_movable_page -= (low_end_pfn - low_pfn);
                 pre_level = pbutil_node->level; 
                 if(pre_level == SON_PB_UMOV)
@@ -1110,47 +1129,53 @@ int son_pbutil_update_free(struct page *page, unsigned int order)
                 /* if previous level is SON_PB_UMOV, can not reach here  
                  * only consider level transition between movable page block*/
 
-                pbutil_list = &zone->son_pbutil_list[cur_level];
-                pbutil_list_pre = &zone->son_pbutil_list[pre_level];
                 /* 
                  * Step 4. delete page from previous level linked list and
                  *         insert page into current level linked list.
                  */
-                spin_lock(&pbutil_list_pre->pbutil_list_lock);
-                list_del(&page->pbutil_level);
+
+                spin_lock(&zone->pbutil_list_lock);
+                pbutil_list_pre = &zone->son_pbutil_list[pre_level];
+                list_del(&pbutil_node->pbutil_level);
                 pbutil_list_pre->cur_count--;
-                spin_unlock(&pbutil_list_pre->pbutil_list_lock);
 
-                spin_lock(&pbutil_list->pbutil_list_lock);
-                list_add_tail(&page->pbutil_level,&pbutil_list->pbutil_list_head);
+                pbutil_list = &zone->son_pbutil_list[cur_level];
+                list_add_tail(&pbutil_node->pbutil_level,&pbutil_list->pbutil_list_head);
                 pbutil_list->cur_count++;
-                spin_unlock(&pbutil_list->pbutil_list_lock);
-
-                if(!pbutil_node->used_unmovable_page && !pbutil_node->used_movable_page){
-                    son_pbutil_node_delete(pbutil_tree, pb_start_pfn);
-                    son_pbutil_node_free(pbutil_node);
-                }                                   
-
-                /* 
-                 * Step 5. update current level info.
-                 */
                 pbutil_node->level = cur_level;
+                spin_unlock(&zone->pbutil_list_lock);
             }                      
-        }
-        trace_printk("page free - %10s\n",pbstat_names[cur_level]);
-    }
 
-    return SON_PBSTAT_SUCCESS;
+            trace_printk("free found, success,pb(%lu ~ %lu),pg(%lu ~ %lu),order(%d/%lu/%lu),pbstat_names(%d) \n",pb_start_pfn, pb_end_pfn, pfn, pfn_end, order, pbutil_node->used_movable_page,pbutil_node->used_unmovable_page,cur_level);
+#if 0
+            /*
+             * Step 6. update radix tree.
+             */
+            if(!pbutil_node->used_unmovable_page && !pbutil_node->used_movable_page){
+                spin_lock(&pbutil_tree->pbutil_tree_lock);
+                son_pbutil_node_delete(pbutil_tree, pb_start_pfn);                
+                son_pbutil_node_free(pbutil_node);
+                spin_unlock(&pbutil_tree->pbutil_tree_lock);
+            }   
+
+#endif
+        }        
+    }
+out:
+    if(ret != SON_PBSTAT_SUCCESS)
+        trace_printk("free, error(%d), pb(%lu ~ %lu), pg(%lu ~ %lu), order(%d) \n",ret,pb_start_pfn, pb_end_pfn, pfn, pfn_end, order);
+
+    return ret;
 }
 
 #endif
 
 static int __init son_scand_init(void)
 {
-   int nid; 
-   for_each_node_state(nid,N_MEMORY)
-       son_scand_kthread_run(nid);
-   
+    int nid; 
+    for_each_node_state(nid,N_MEMORY)
+        son_scand_kthread_run(nid);
+
     return 0;
 }
 subsys_initcall(son_scand_init);

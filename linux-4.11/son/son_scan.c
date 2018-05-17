@@ -705,6 +705,7 @@ pb_stat_t calc_pbutil_level(unsigned long used_pages)
         case 2:
             /* 1% ~ 29%  used    */
             ret = SON_PB_BLUE;
+            break;
         case 3:
         case 4:
         case 5:
@@ -724,6 +725,7 @@ pb_stat_t calc_pbutil_level(unsigned long used_pages)
             break;
         default:
             ret = SON_PB_RED;
+            break;
     }
     return ret;
 }
@@ -781,6 +783,7 @@ int son_pbutil_update_alloc(struct page *page, unsigned int order)
     
     /* Step 1. Initialize vatiables.*/         
     zone = page_zone(page);
+    spin_lock(&zone->pbutil_list_lock);
 
     mgtype = page->mgtype;
     pbutil_pgdat = zone->zone_pgdat;
@@ -861,6 +864,7 @@ int son_pbutil_update_alloc(struct page *page, unsigned int order)
      *                   pfn(28)                          pfn_end(44)
      *                                                  low_end_pfn(44)
      */
+
     for(low_pfn = pb_start_pfn, low_end_pfn = pb_end_pfn; 
             pb_start_pfn < pfn_end ; 
             pb_start_pfn = pb_end_pfn,
@@ -877,9 +881,9 @@ int son_pbutil_update_alloc(struct page *page, unsigned int order)
         }
 
         /* Step 2. Search pbutil_node_t in radix tree  */ 
-        rcu_read_lock();
+//        rcu_read_lock();
         pbutil_node = son_pbutil_node_lookup(pbutil_tree, pb_start_pfn);
-        rcu_read_unlock();
+//        rcu_read_unlock();
         if(!pbutil_node){
             /* ok. this page is the only allocated page within page. 
              * we need to allocate new pbutil_node_t and insert to 
@@ -914,6 +918,7 @@ int son_pbutil_update_alloc(struct page *page, unsigned int order)
 
                     bitmap_set(pbutil_node->pbutil_movable_bitmap, 
                             low_pfn - pb_start_pfn, low_end_pfn - low_pfn);
+
                     pbutil_node->used_movable_page += (low_end_pfn - low_pfn);
                     cur_level = calc_pbutil_level(pbutil_node->used_movable_page);
                     pbutil_node->pb_head_pfn = pb_start_pfn;
@@ -935,22 +940,32 @@ int son_pbutil_update_alloc(struct page *page, unsigned int order)
                  *         unmovable page doesn't have bitmap info.
                  */
                 pbutil_node->level = cur_level;
-                spin_lock(&pbutil_tree->pbutil_tree_lock);
+ //               spin_lock(&pbutil_tree->pbutil_tree_lock);
                 son_pbutil_node_insert(pbutil_tree, pb_start_pfn, pbutil_node);
                 pbutil_tree->node_count++;
-                spin_unlock(&pbutil_tree->pbutil_tree_lock); 
+//                spin_unlock(&pbutil_tree->pbutil_tree_lock); 
 
                 /* 
                  * Step 5. insert page to calculated level linked list  
                  *         SON_PB_BLUE or SON_PB_UMOV
-                 */
-                spin_lock(&zone->pbutil_list_lock);
+                 */ 
+#if 0
+                /* version 2 */                
+                pbutil_list = &zone->son_pbutil_list[cur_level];
+                spin_lock(&pbutil_list->pbutil_list_lock);
+                list_add_tail(&pbutil_node->pbutil_level,&pbutil_list->pbutil_list_head);
+                pbutil_list->cur_count++;
+                spin_unlock(&pbutil_list->pbutil_list_lock);
+#endif
+                /* version 1 */                
+ //               spin_lock(&zone->pbutil_list_lock);
                 pbutil_list = &zone->son_pbutil_list[cur_level];
                 list_add_tail(&pbutil_node->pbutil_level,&pbutil_list->pbutil_list_head);
                 pbutil_list->cur_count++;
-                spin_unlock(&zone->pbutil_list_lock);
-
+//                spin_unlock(&zone->pbutil_list_lock);
+#if SON_DEBUG_ENABLE
                 trace_printk("alloc new, success,pb(%lu ~ %lu),pg(%lu ~ %lu),order(%d/%lu/%lu),pbstat_names(%d) \n",pb_start_pfn, pb_end_pfn, pfn, pfn_end, order, pbutil_node->used_movable_page,pbutil_node->used_unmovable_page,cur_level);
+#endif
             }else{
                 ret = SON_PBSTAT_ERR_MEMALLOC;
                 goto out;
@@ -970,8 +985,10 @@ int son_pbutil_update_alloc(struct page *page, unsigned int order)
             if(mgtype == SON_PB_MOVABLE){
                 /* if current allocation is movable allocation 
                  * log status to bitmap  */
+
                 bitmap_set(pbutil_node->pbutil_movable_bitmap, 
                         low_pfn - pb_start_pfn, low_end_pfn - low_pfn);
+
                 pbutil_node->used_movable_page += (low_end_pfn - low_pfn);
                 pre_level = pbutil_node->level; 
                 if(pre_level == SON_PB_UMOV)
@@ -991,7 +1008,7 @@ int son_pbutil_update_alloc(struct page *page, unsigned int order)
                 cur_level = SON_PB_UMOV; 
             }
 
-            if(pre_level != cur_level){
+            if(pre_level != cur_level && pre_level != SON_PB_ISO){
                 /* if previous level is SON_PB_UMOV, can not reach here  
                  * only consider level transition between movable page block*/
 
@@ -999,7 +1016,24 @@ int son_pbutil_update_alloc(struct page *page, unsigned int order)
                  * Step 4. delete page from previous level linked list and
                  *         insert page into current level linked list.
                  */                 
-                spin_lock(&zone->pbutil_list_lock);
+#if 0 
+                /* version 2 */
+                pbutil_list_pre = &zone->son_pbutil_list[pre_level];
+                spin_lock(&pbutil_list_pre->pbutil_list_lock);
+                list_del(&pbutil_node->pbutil_level);
+                pbutil_list_pre->cur_count--;
+                spin_unlock(&pbutil_list_pre->pbutil_list_lock);
+
+                pbutil_list = &zone->son_pbutil_list[cur_level];
+                spin_lock(&pbutil_list->pbutil_list_lock);
+                list_add_tail(&pbutil_node->pbutil_level,&pbutil_list->pbutil_list_head);
+                pbutil_list->cur_count++;
+                spin_unlock(&pbutil_list->pbutil_list_lock);
+
+                pbutil_node->level = cur_level;
+#endif 
+                /* version 1 */
+//                spin_lock(&zone->pbutil_list_lock);
                 pbutil_list_pre = &zone->son_pbutil_list[pre_level];
                 list_del(&pbutil_node->pbutil_level);
                 pbutil_list_pre->cur_count--;
@@ -1008,11 +1042,11 @@ int son_pbutil_update_alloc(struct page *page, unsigned int order)
                 list_add_tail(&pbutil_node->pbutil_level,&pbutil_list->pbutil_list_head);
                 pbutil_list->cur_count++;
                 pbutil_node->level = cur_level;
-                spin_unlock(&zone->pbutil_list_lock);
-
+//                spin_unlock(&zone->pbutil_list_lock);
             }
-
+#if SON_DEBUG_ENABLE
             trace_printk("alloc found, success,pb(%lu ~ %lu),pg(%lu ~ %lu),order(%d/%lu/%lu),pbstat_names(%d) \n",pb_start_pfn, pb_end_pfn, pfn, pfn_end, order, pbutil_node->used_movable_page,pbutil_node->used_unmovable_page,cur_level);
+#endif
 
 #if 0
             /* 
@@ -1030,6 +1064,7 @@ int son_pbutil_update_alloc(struct page *page, unsigned int order)
 out:
     if(ret != SON_PBSTAT_SUCCESS)
         trace_printk("alloc, error(%d), pb(%lu ~ %lu), pg(%lu ~ %lu), order(%d) \n",ret,pb_start_pfn, pb_end_pfn, pfn, pfn_end, order);
+    spin_unlock(&zone->pbutil_list_lock);
 
     return ret;
 }
@@ -1048,6 +1083,7 @@ int son_pbutil_update_free(struct page *page, unsigned int order)
 
     /* Step 1. Initialize vatiables.*/
     zone = page_zone(page);
+    spin_lock(&zone->pbutil_list_lock);
 
     mgtype = page->mgtype;
     pbutil_pgdat = zone->zone_pgdat;
@@ -1074,9 +1110,9 @@ int son_pbutil_update_free(struct page *page, unsigned int order)
         }
 
         /* Step 2. Search pbutil_node_t in radix tree  */ 
-        rcu_read_lock();
+//        rcu_read_lock();
         pbutil_node = son_pbutil_node_lookup(pbutil_tree, pb_start_pfn);
-        rcu_read_unlock();
+//        rcu_read_unlock();
         if(!pbutil_node){
             /* if page are already allocated  but doesn't have page block 
              * utilization info. ackward situation. recheck status and 
@@ -1093,13 +1129,14 @@ int son_pbutil_update_free(struct page *page, unsigned int order)
 #if SON_DEBUG_ENABLE
             trace_printk("pbutil_node is found in allocating process \n");                
 #endif
-
             /* Step 3. Update pbutil_node's bitmap and page count */ 
             if(mgtype == SON_PB_MOVABLE){
+
                 /* if current allocation is movable allocation 
                  * log status to bitmap  */
                 bitmap_clear(pbutil_node->pbutil_movable_bitmap, 
                         low_pfn - pb_start_pfn, low_end_pfn - low_pfn);
+
                 pbutil_node->used_movable_page -= (low_end_pfn - low_pfn);
                 pre_level = pbutil_node->level; 
                 if(pre_level == SON_PB_UMOV)
@@ -1125,7 +1162,7 @@ int son_pbutil_update_free(struct page *page, unsigned int order)
                  * THP in this page block by compaction!! */
             }
 
-            if(pre_level != cur_level){
+            if(pre_level != cur_level && pre_level != SON_PB_ISO){
                 /* if previous level is SON_PB_UMOV, can not reach here  
                  * only consider level transition between movable page block*/
 
@@ -1133,8 +1170,24 @@ int son_pbutil_update_free(struct page *page, unsigned int order)
                  * Step 4. delete page from previous level linked list and
                  *         insert page into current level linked list.
                  */
+#if 0
+                /* version 2 */
+                pbutil_list_pre = &zone->son_pbutil_list[pre_level];
+                spin_lock(&pbutil_list_pre->pbutil_list_lock);
+                list_del(&pbutil_node->pbutil_level);
+                pbutil_list_pre->cur_count--;
+                spin_unlock(&pbutil_list_pre->pbutil_list_lock);
 
-                spin_lock(&zone->pbutil_list_lock);
+                pbutil_list = &zone->son_pbutil_list[cur_level];
+                spin_lock(&pbutil_list->pbutil_list_lock);
+                list_add_tail(&pbutil_node->pbutil_level,&pbutil_list->pbutil_list_head);
+                pbutil_list->cur_count++;
+                spin_unlock(&pbutil_list->pbutil_list_lock);
+
+                pbutil_node->level = cur_level;
+#endif 
+                /* version 1 */
+//                spin_lock(&zone->pbutil_list_lock);
                 pbutil_list_pre = &zone->son_pbutil_list[pre_level];
                 list_del(&pbutil_node->pbutil_level);
                 pbutil_list_pre->cur_count--;
@@ -1143,10 +1196,12 @@ int son_pbutil_update_free(struct page *page, unsigned int order)
                 list_add_tail(&pbutil_node->pbutil_level,&pbutil_list->pbutil_list_head);
                 pbutil_list->cur_count++;
                 pbutil_node->level = cur_level;
-                spin_unlock(&zone->pbutil_list_lock);
+//                spin_unlock(&zone->pbutil_list_lock);
             }                      
-
+#if SON_DEBUG_ENABLE
             trace_printk("free found, success,pb(%lu ~ %lu),pg(%lu ~ %lu),order(%d/%lu/%lu),pbstat_names(%d) \n",pb_start_pfn, pb_end_pfn, pfn, pfn_end, order, pbutil_node->used_movable_page,pbutil_node->used_unmovable_page,cur_level);
+#endif
+
 #if 0
             /*
              * Step 6. update radix tree.
@@ -1164,6 +1219,226 @@ int son_pbutil_update_free(struct page *page, unsigned int order)
 out:
     if(ret != SON_PBSTAT_SUCCESS)
         trace_printk("free, error(%d), pb(%lu ~ %lu), pg(%lu ~ %lu), order(%d) \n",ret,pb_start_pfn, pb_end_pfn, pfn, pfn_end, order);
+    spin_unlock(&zone->pbutil_list_lock);
+
+    return ret;
+}
+
+int son_pbutil_update_alloc_umov(struct page *page, unsigned int order)
+{
+    struct zone *zone = NULL;
+    pg_data_t *pbutil_pgdat = NULL;
+    pbutil_tree_t *pbutil_tree = NULL;
+    pbutil_node_t *pbutil_node = NULL;
+    pbutil_list_t *pbutil_list = NULL, *pbutil_list_pre = NULL;   
+    unsigned long pb_start_pfn, pb_end_pfn, pfn,pfn_end;
+    unsigned long low_pfn, low_end_pfn;
+    pb_stat_t cur_level = SON_PB_WHITE, pre_level = SON_PB_WHITE;
+    int mgtype, ret = SON_PBSTAT_SUCCESS;
+    
+    zone = page_zone(page);
+    spin_lock(&zone->pbutil_list_lock);
+   
+    mgtype = page->mgtype;
+    pbutil_pgdat = zone->zone_pgdat;
+    pbutil_tree = &pbutil_pgdat->son_pbutil_tree;
+
+    pfn = page_to_pfn(page);          
+    pfn_end = pfn + (1UL << order);
+    pb_start_pfn = block_start_pfn(pfn, pageblock_order); 
+    pb_end_pfn = block_end_pfn(pfn, pageblock_order);
+
+    for(low_pfn = pb_start_pfn, low_end_pfn = pb_end_pfn; 
+            pb_start_pfn < pfn_end ; 
+            pb_start_pfn = pb_end_pfn,
+            pb_end_pfn += pageblock_nr_pages,
+            low_pfn = pb_start_pfn,
+            low_end_pfn = pb_end_pfn){
+
+        if(pfn > pb_start_pfn){
+            low_pfn = pfn;
+        }
+
+        if(pfn_end < pb_end_pfn){
+            low_end_pfn = pfn_end;
+        }
+
+//        rcu_read_lock();
+        pbutil_node = son_pbutil_node_lookup(pbutil_tree, pb_start_pfn);
+//        rcu_read_unlock();
+        if(!pbutil_node){
+//            pbutil_node = son_pbutil_node_alloc();
+            trace_printk("SJH_alloc_new umovable page is allocated \n");
+#if 0
+            if(pbutil_node){ 
+
+                if(mgtype == SON_PB_MOVABLE){
+
+                    bitmap_set(pbutil_node->pbutil_movable_bitmap, 
+                            low_pfn - pb_start_pfn, low_end_pfn - low_pfn);
+                    pbutil_node->used_movable_page += (low_end_pfn - low_pfn);
+                    cur_level = calc_pbutil_level(pbutil_node->used_movable_page);
+                    pbutil_node->pb_head_pfn = pb_start_pfn;
+                    INIT_LIST_HEAD(&pbutil_node->pbutil_level);
+                }else{
+
+                    pbutil_node->used_unmovable_page += (low_end_pfn - low_pfn);
+                    cur_level = SON_PB_UMOV;
+                    pbutil_node->pb_head_pfn = pb_start_pfn;
+                    INIT_LIST_HEAD(&pbutil_node->pbutil_level);
+                }
+
+                pbutil_node->level = cur_level;
+                spin_lock(&pbutil_tree->pbutil_tree_lock);
+                son_pbutil_node_insert(pbutil_tree, pb_start_pfn, pbutil_node);
+                pbutil_tree->node_count++;
+                spin_unlock(&pbutil_tree->pbutil_tree_lock); 
+
+                spin_lock(&zone->pbutil_list_lock);
+                pbutil_list = &zone->son_pbutil_list[cur_level];
+                list_add_tail(&pbutil_node->pbutil_level,&pbutil_list->pbutil_list_head);
+                pbutil_list->cur_count++;
+                spin_unlock(&zone->pbutil_list_lock);
+
+            }else{
+                ret = SON_PBSTAT_ERR_MEMALLOC;
+                goto out;
+            }
+#endif
+        }else{
+            trace_printk("SJH_alloc_found umovable page is allocated \n");
+
+#if 0
+            if(mgtype == SON_PB_MOVABLE){
+
+                bitmap_set(pbutil_node->pbutil_movable_bitmap, 
+                        low_pfn - pb_start_pfn, low_end_pfn - low_pfn);
+                pbutil_node->used_movable_page += (low_end_pfn - low_pfn);
+                pre_level = pbutil_node->level; 
+                if(pre_level == SON_PB_UMOV)
+                    cur_level = pre_level;
+                else
+                    cur_level = calc_pbutil_level(pbutil_node->used_movable_page);
+            }else{
+
+                pbutil_node->used_unmovable_page += (low_end_pfn - low_pfn);
+                pre_level = pbutil_node->level;
+                cur_level = SON_PB_UMOV; 
+            }
+
+            if(pre_level != cur_level){
+
+                spin_lock(&zone->pbutil_list_lock);
+                pbutil_list_pre = &zone->son_pbutil_list[pre_level];
+                list_del(&pbutil_node->pbutil_level);
+                pbutil_list_pre->cur_count--;
+
+                pbutil_list = &zone->son_pbutil_list[cur_level];
+                list_add_tail(&pbutil_node->pbutil_level,&pbutil_list->pbutil_list_head);
+                pbutil_list->cur_count++;
+                pbutil_node->level = cur_level;
+                spin_unlock(&zone->pbutil_list_lock);
+            }
+#endif
+        }
+    }
+out:
+    spin_unlock(&zone->pbutil_list_lock);
+
+    return ret;
+}
+
+int son_pbutil_update_free_umov(struct page *page, unsigned int order)
+{
+    struct zone *zone = NULL;
+    pg_data_t *pbutil_pgdat = NULL;
+    pbutil_tree_t *pbutil_tree = NULL;
+    pbutil_node_t *pbutil_node = NULL;
+    pbutil_list_t *pbutil_list = NULL, *pbutil_list_pre = NULL;   
+    unsigned long pb_start_pfn, pb_end_pfn, pfn,pfn_end;
+    unsigned long low_pfn, low_end_pfn;
+    pb_stat_t cur_level = SON_PB_WHITE, pre_level = SON_PB_WHITE;
+    int mgtype, ret = SON_PBSTAT_SUCCESS;
+
+    zone = page_zone(page);
+    spin_lock(&zone->pbutil_list_lock);
+
+    mgtype = page->mgtype;
+    pbutil_pgdat = zone->zone_pgdat;
+    pbutil_tree = &pbutil_pgdat->son_pbutil_tree;
+
+    pfn = page_to_pfn(page);          
+    pfn_end = pfn + (1UL << order);
+    pb_start_pfn = block_start_pfn(pfn, pageblock_order); 
+    pb_end_pfn = block_end_pfn(pfn, pageblock_order);
+
+    for(low_pfn = pb_start_pfn, low_end_pfn = pb_end_pfn; 
+            pb_start_pfn < pfn_end ; 
+            pb_start_pfn = pb_end_pfn,
+            pb_end_pfn += pageblock_nr_pages,
+            low_pfn = pb_start_pfn,
+            low_end_pfn = pb_end_pfn){
+
+        if(pfn > pb_start_pfn){
+            low_pfn = pfn;
+        }
+
+        if(pfn_end < pb_end_pfn){
+            low_end_pfn = pfn_end;
+        }
+
+//        rcu_read_lock();
+        pbutil_node = son_pbutil_node_lookup(pbutil_tree, pb_start_pfn);
+//        rcu_read_unlock();
+        if(!pbutil_node){
+            trace_printk("SJH_free_notfound can't find node \n");
+  
+            ret = SON_PBSTAT_ERR_NODE_NOT_PRESENT;
+            goto out;
+        }else{
+            trace_printk("SJH_free_found can't find node \n");
+
+#if 0 
+            if(mgtype == SON_PB_MOVABLE){
+
+                bitmap_clear(pbutil_node->pbutil_movable_bitmap, 
+                        low_pfn - pb_start_pfn, low_end_pfn - low_pfn);
+                pbutil_node->used_movable_page -= (low_end_pfn - low_pfn);
+                pre_level = pbutil_node->level; 
+                if(pre_level == SON_PB_UMOV)
+                    cur_level = pre_level;
+                else
+                    cur_level = calc_pbutil_level(pbutil_node->used_movable_page);
+
+            }else{
+
+                pbutil_node->used_unmovable_page -= (low_end_pfn - low_pfn);
+                pre_level = pbutil_node->level;
+
+                if(pbutil_node->used_unmovable_page <= 0)
+                    cur_level = calc_pbutil_level(pbutil_node->used_movable_page);
+                else
+                    cur_level = pre_level;
+            }
+
+            if(pre_level != cur_level){
+
+                spin_lock(&zone->pbutil_list_lock);
+                pbutil_list_pre = &zone->son_pbutil_list[pre_level];
+                list_del(&pbutil_node->pbutil_level);
+                pbutil_list_pre->cur_count--;
+
+                pbutil_list = &zone->son_pbutil_list[cur_level];
+                list_add_tail(&pbutil_node->pbutil_level,&pbutil_list->pbutil_list_head);
+                pbutil_list->cur_count++;
+                pbutil_node->level = cur_level;
+                spin_unlock(&zone->pbutil_list_lock);
+            }                      
+#endif
+        } 
+    }
+out:
+    spin_unlock(&zone->pbutil_list_lock);
 
     return ret;
 }

@@ -1165,7 +1165,26 @@ static void free_one_page(struct zone *zone,
 		migratetype = get_pfnblock_migratetype(page, pfn);
 	}
 	__free_one_page(page, pfn, zone, order, migratetype);
+
 	spin_unlock(&zone->lock);
+
+#ifdef CONFIG_SON
+#if SON_PBSTAT_ENABLE 
+#if 1
+//    if(migratetype == MIGRATE_MOVABLE)
+    if(page->mgtype == SON_PB_MOVABLE)
+        son_pbutil_update_free(page,order);
+#endif
+#if 0
+    if(migratetype == MIGRATE_MOVABLE)
+        son_pbutil_update_free(page,order);
+    else
+        son_pbutil_update_free_umov(page,order);
+#endif
+    page->mgtype=SON_PB_BUDDY;           
+#endif
+#endif
+
 }
 
 static void __meminit __init_single_page(struct page *page, unsigned long pfn,
@@ -1254,15 +1273,6 @@ static void __free_pages_ok(struct page *page, unsigned int order)
 	local_irq_save(flags);
 	__count_vm_events(PGFREE, 1 << order);
 	free_one_page(page_zone(page), page, pfn, order, migratetype);
-#ifdef CONFIG_SON
-#if SON_PBSTAT_ENABLE 
-    if(page && page->mgtype == MIGRATE_MOVABLE){
-//    if(page){
-        son_pbutil_update_free(page, order);
-        page->mgtype = SON_PB_BUDDY;
-    }
-#endif
-#endif
 	local_irq_restore(flags);
 }
 
@@ -1797,12 +1807,7 @@ static void prep_new_page(struct page *page, unsigned int order, gfp_t gfp_flags
 		clear_page_pfmemalloc(page); 
 
 #ifdef CONFIG_SON
-#if 0
-#if SON_PBSTAT_ENABLE    
-    INIT_LIST_HEAD(&page->pbutil_level);
-#endif 
-#endif 
-    /*FIXME page->node */
+
 #if SON_REFSCAND_ENABLE 
 	bitmap_clear(page->page_util_ref_info.freq_bitmap, 0, FREQ_BITMAP_SIZE);    
     page->page_util_ref_info.page = NULL;   
@@ -2555,11 +2560,18 @@ void free_hot_cold_page(struct page *page, bool cold)
 
 #ifdef CONFIG_SON
 #if SON_PBSTAT_ENABLE
-    if(page && page->mgtype == MIGRATE_MOVABLE){
-//    if(page){
-        son_pbutil_update_free(page, 0);
-        page->mgtype = SON_PB_BUDDY;
-    }
+#if 1
+//    if(migratetype == MIGRATE_MOVABLE)
+    if(page->mgtype == SON_PB_MOVABLE)
+        son_pbutil_update_free(page,0);
+#endif
+#if 0
+    if(migratetype == MIGRATE_MOVABLE)
+        son_pbutil_update_free(page,0);
+    else
+        son_pbutil_update_free_umov(page,0);
+#endif
+    page->mgtype=SON_PB_BUDDY;
 #endif
 #endif
 
@@ -2728,16 +2740,23 @@ static struct page *rmqueue_pcplist(struct zone *preferred_zone,
 	if (page) {
 		__count_zid_vm_events(PGALLOC, page_zonenum(page), 1 << order);
 		zone_statistics(preferred_zone, zone);
-	}
 #ifdef CONFIG_SON
 #if SON_PBSTAT_ENABLE            
-    if(page && migratetype == MIGRATE_MOVABLE){
-//    if(page){
         page->mgtype=migratetype;
-        son_pbutil_update_alloc(page,order);
-    }
+#if 1
+//        if(migratetype == MIGRATE_MOVABLE)
+        if(page->mgtype == SON_PB_MOVABLE)
+            son_pbutil_update_alloc(page,order);
+#endif
+#if 0 
+        if(migratetype == MIGRATE_MOVABLE)
+            son_pbutil_update_alloc(page,order);
+        else
+            son_pbutil_update_alloc_umov(page,order);    
 #endif
 #endif
+#endif
+	}
 	local_irq_restore(flags);
 	return page;
 }
@@ -2777,6 +2796,7 @@ struct page *rmqueue(struct zone *preferred_zone,
 		if (!page)
 			page = __rmqueue(zone, order, migratetype);
 	} while (page && check_new_pages(page, order));
+
 	spin_unlock(&zone->lock);
 	if (!page)
 		goto failed;
@@ -2785,15 +2805,26 @@ struct page *rmqueue(struct zone *preferred_zone,
 
 	__count_zid_vm_events(PGALLOC, page_zonenum(page), 1 << order);
 	zone_statistics(preferred_zone, zone);
+
 #ifdef CONFIG_SON
 #if SON_PBSTAT_ENABLE            
-    if(page && migratetype == MIGRATE_MOVABLE){
-//    if(page){
-        page->mgtype=migratetype;
-        son_pbutil_update_alloc(page,order);
+    if(page){
+        page->mgtype=migratetype; 
+#if 1
+//        if(migratetype == MIGRATE_MOVABLE)
+        if(page->mgtype == SON_PB_MOVABLE)
+            son_pbutil_update_alloc(page,order);
+#endif
+#if 0
+        if(migratetype == MIGRATE_MOVABLE)
+            son_pbutil_update_alloc(page,order);
+        else
+            son_pbutil_update_alloc_umov(page,order);
+#endif
     }
 #endif
 #endif
+
 
 	local_irq_restore(flags);
 
@@ -6020,6 +6051,9 @@ static void __paginginit free_area_init_core(struct pglist_data *pgdat)
 
     INIT_RADIX_TREE(&son_pbtree->pbutil_tree_root, GFP_ATOMIC);
     spin_lock_init(&son_pbtree->pbutil_tree_lock);
+    son_pbtree->node_count = 0;
+    son_pbtree->mig_success = 0;
+    son_pbtree->mig_fail = 0;
 #endif
 #endif
 
@@ -6108,7 +6142,17 @@ static void __paginginit free_area_init_core(struct pglist_data *pgdat)
 		memmap_init(size, nid, j, zone_start_pfn);
 
 #ifdef CONFIG_SON 
-#if SON_PBSTAT_ENABLE
+#if SON_PBSTAT_ENABLE 
+#if 0
+        /* version 2  */        
+        for(pblevel = 0 ; pblevel < SON_PB_MAX ; pblevel++){
+            son_pblist = &zone->son_pbutil_list[pblevel];
+            INIT_LIST_HEAD(&son_pblist->pbutil_list_head);
+            spin_lock_init(&son_pblist->pbutil_list_lock);            
+            son_pblist->cur_count = 0;
+        }
+#endif
+        /* version 1  */ 
         spin_lock_init(&zone->pbutil_list_lock);
         for(pblevel = 0 ; pblevel < SON_PB_MAX ; pblevel++){
             son_pblist = &zone->son_pbutil_list[pblevel];

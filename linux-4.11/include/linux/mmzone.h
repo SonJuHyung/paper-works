@@ -492,7 +492,12 @@ struct zone {
 	bool			contiguous;
 #ifdef CONFIG_SON 
 #if SON_PBSTAT_ENABLE
-    pbutil_list_t   son_pbutil_list[SON_PB_MAX];    
+#if 0
+    /* version 2  */
+    pbutil_list_t   son_pbutil_list[SON_PB_MAX];       
+#endif 
+    /* version 1  */
+    pbutil_list_t   son_pbutil_list[SON_PB_MAX];       
     spinlock_t pbutil_list_lock;
 
     /* spinlock which is used in page linked list for kcompactd kernel thread */  

@@ -171,9 +171,12 @@ pbutil_node_t *son_pbutil_node_alloc(void)
     if(!node)
         return NULL;
 
-    bitmap_clear(node->pbutil_movable_bitmap, 0, PBUTIL_BMAP_SIZE);
+//    bitmap_clear(node->pbutil_movable_bitmap, 0, PBUTIL_BMAP_SIZE);
+    bitmap_zero(node->pbutil_movable_bitmap, PBUTIL_BMAP_SIZE);
     node->used_movable_page = 0;
     node->used_unmovable_page = 0;
+    node->isolated_movable_pages = 0;
+    node->pb_head_pfn = 0;
     node->level = SON_PB_MAX;
 
 	return node;
@@ -181,8 +184,6 @@ pbutil_node_t *son_pbutil_node_alloc(void)
 
 void son_pbutil_node_free(pbutil_node_t *node)
 {
-    node->used_movable_page = 0;
-    node->used_unmovable_page = 0;
 	kmem_cache_free(son_pbutil_node_cachep, node);
 }
 

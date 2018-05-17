@@ -199,8 +199,35 @@ struct compact_control {
 #ifdef CONFIG_SON
     unsigned long nr_migratepb; /* scanned page block count  */
     unsigned long nr_clearedpb; /* cleared page block count  */
+#if SON_PBSTAT_ENABLE
+    long cur_level;
+#endif
 #endif
 };
+
+#ifdef CONFIG_SON
+#if SON_PBSTAT_ENABLE
+struct son_compact_control{
+    struct list_head freepages;	/* List of free pages to migrate to         init */
+    struct list_head migratepages;	/* List of pages being migrated         init */
+    unsigned long nr_freepages;	/* Number of isolated free pages            init */
+    unsigned long nr_migratepages;	/* Number of pages to migrate           init */
+    unsigned long nr_migratepb; /* scanned page block count                 init */
+    unsigned long nr_clearedpb; /* cleared page block count                 init */
+    unsigned long total_migrate_scanned; /* total migrated page count       init FIXME*/
+    unsigned long total_free_scanned; /* total free scannned                init FIXME*/
+    enum migrate_mode mode;		/* Async or sync migration mode             init */
+    bool direct_compaction;		/* False from kcompactd or /proc/...             TODO*/
+    const gfp_t gfp_mask;		/* gfp mask of a direct compactor           init */
+    const unsigned int alloc_flags;	/* alloc flags of a direct compactor */
+    const int classzone_idx;	/* zone index of a direct compactor              FIXME */
+    struct zone *zone;        /* working zone                               init */
+    bool contended;			/* Signal lock or sched contention */
+    int cur_mig_level; /* current target compaction level                   init */
+    int cur_free_level; /* current target compaction level                   init */
+};
+#endif
+#endif
 
 unsigned long
 isolate_freepages_range(struct compact_control *cc,

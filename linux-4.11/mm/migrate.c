@@ -49,6 +49,11 @@
 
 #include "internal.h"
 
+#ifdef CONFIG_SON
+#if SON_PBSTAT_ENABLE
+#include <son/son.h>
+#endif
+#endif
 /*
  * migrate_prep() needs to be called before we start compiling a list of pages
  * to be migrated using isolate_lru_page(). If scheduling work on other CPUs is
@@ -1064,7 +1069,19 @@ static ICE_noinline int unmap_and_move(new_page_t get_new_page,
 	int rc = MIGRATEPAGE_SUCCESS;
 	int *result = NULL;
 	struct page *newpage;
-
+#ifdef CONFIG_SON
+#if SON_PBSTAT_ENABLE   
+    struct page *page_from = NULL, *page_to = NULL; 
+    struct zone *zone = NULL;
+    pg_data_t *pgdat = NULL;
+    pbutil_tree_t pbutil_tree = NULL;
+    pbutil_node_t node_from = NULL, node_to = NULL;
+    unsigned long pfn_from = 0, pfn_to = 0;
+    unsigned long pfn_startpb_from =0, pfn_startpb_to = 0;
+    pb_stat_t level_pre, level_cur;
+    pbutil_list_t *pbutil_list_pre = NULL, *pbutil_list_cur = NULL;
+#endif
+#endif     
 	newpage = get_new_page(page, private, &result);
 	if (!newpage)
 		return -ENOMEM;
@@ -1115,7 +1132,7 @@ out:
 		 */
 		if (likely(!__PageMovable(page)))
 			dec_node_page_state(page, NR_ISOLATED_ANON +
-					page_is_file_cache(page));
+					page_is_file_cache(page)); 
 	}
 
 	/*
@@ -1134,6 +1151,130 @@ out:
 			if (!test_set_page_hwpoison(page))
 				num_poisoned_pages_inc();
 		}
+#ifdef CONFIG_SON
+#if SON_PBSTAT_ENABLE
+        /* 여기서 node 정보 update  */
+        /* 그전 page 상태 node update 해주고 
+         * 옮길 page위치의 node 상태 update  
+         * 옮길 page의 경우, 필요시 list 위치 변경*/ 
+        if(reason == MR_COMPACTION){
+            page_from = page;
+            page_to = newpage;
+            pfn_from = page_to_pfn(page_from);
+            pfn_to = page_to_pfn(page_to);
+            pfn_startpb_from = block_start_pfn(pfn_from,pageblock_order);
+            pfn_startpb_to = block_start_pfn(pfn_to,pageblock_order);
+            zone = page_zone(page_from);
+            pgdat = zone->zone_pgdat;
+            pbutil_tree_t = &pgdat->son_pbutil_tree;
+            
+            spin_lock(&zone->pbutil_list_lock);
+            /* search pbutil_node which will be migrated from */ 
+            node_from = son_pbutil_node_lookup(pbutil_tree, pb_start_pfn);
+            if(!node_from){
+                trace_printk("mig phase, page_from's node not found \n");
+                goto unlock;
+            }else{
+                trace_printk("mig phase, page_from's node found update \n");
+                /* update pbutil_node state which will be migrated from */ 
+                bitmap_clear(node_from->pbutil_movable_bitmap, 
+                        pfn_from - pfn_startpb_from, 1);
+                node_from->used_movable_page--;
+
+                level_pre = node_from->level;
+    
+                if(level_pre == SON_PB_ISO){
+                    node_from->isolated_movable_pages--;
+                    if(!node_from->isolated_movable_pages){
+
+                        level_cur = calc_pbutil_level(node_from->used_movable_page);
+                        pbutil_list_pre = &zone->son_pbutil_list[level_pre];
+                        list_del(&node_from->pbutil_level);
+                        pbutil_list_pre->cur_count--;
+
+                        pbutil_list_cur = &zone->son_pbutil_list[level_cur];
+                        list_add_tail(&node_from->pbutil_level,&pbutil_list_cur->pbutil_list_head);
+                        pbutil_list_cur->cur_count++;
+                        node_from->level = level_cur;
+                        trace_printk("mig phase, page_from's node found update state changed(moved from isolated list,%d) \n",
+                                node_from->isolated_movable_pages);
+                    }
+                    trace_printk("mig phase, page_from's node found update success(still in isolated list,%d) \n",
+                            node_from->isolated_movable_pages);
+                }else{
+                    level_cur = calc_pbutil_level(node_from->used_movable_page);
+                    if(level_cur != level_pre){
+
+                        pbutil_list_pre = &zone->son_pbutil_list[level_pre];
+                        list_del(&node_from->pbutil_level);
+                        pbutil_list_pre->cur_count--;
+
+                        pbutil_list_cur = &zone->son_pbutil_list[level_cur];
+                        list_add_tail(&node_from->pbutil_level,&pbutil_list_cur->pbutil_list_head);
+                        pbutil_list_cur->cur_count++;
+                        node_from->level = level_cur;
+                        trace_printk("mig phase, page_from's node found update state changed \n");
+                    }
+                    trace_printk("mig phase, page_from's node found update success \n");
+                }
+
+            }
+
+            /* search pbutil_node which will be migrated to */
+            node_to = son_pbutil_node_lookup(pbutil_tree, pfn_startpb_to);
+            if(!node_to){
+                trace_printk("mig phase, page_to's node not found alloc new\n");
+                node_to = son_pbutil_node_alloc();
+                if(node_to){
+                    pbutil_node->pb_head_pfn = pfn_startpb_to;
+                    /* update pbutil_node state which will be migrated to */
+                    bitmap_set(node_to->pbutil_movable_bitmap, 
+                            pfn_to - pfn_startpb_to, 1);
+                    node_to->used_movable_page++;
+                    level_cur = calc_pbutil_level(node_to->used_movable_page);
+                    node_to->level = level_cur;
+                    INIT_LIST_HEAD(node_to->pbutil_level);
+
+                    son_pbutil_node_insert(pbutil_tree, pfn_startpb_to, node_to);
+                    pbutil_tree->node_count++;
+
+                    pbutil_list_cur = &zone->son_pbutil_list[level_cur];
+                    list_add_tail(&node_to->pbutil_level,&pbutil_list->pbutil_list_head);
+
+                    node_to->level = level_cur;
+                    trace_printk("mig phase, page_to's node alloc new success \n");                  
+                }else{
+                    trace_printk("mig phase, page_to's node alloc new failed \n");                  
+                    goto unlock;
+                }
+            }else{
+                trace_printk("mig phase, page_to's node found update \n");
+                bitmap_set(node_to->pbutil_movable_bitmap, 
+                        pfn_to - pfn_startpb_to, 1);
+                node_to->used_movable_page++;
+                level_pre = node_to->level;
+                level_cur = calc_pbutil_level(node_to->used_movable_page);
+
+                if(level_cur != level_pre){
+
+                    pbutil_list_pre = &zone->son_pbutil_list[level_pre];
+                    list_del(&node_to->pbutil_level);
+                    pbutil_list_pre->cur_count--;
+
+                    pbutil_list_cur = &zone->son_pbutil_list[level_cur];
+                    list_add_tail(&node_to->pbutil_level,&pbutil_list_cur->pbutil_list_head);
+                    pbutil_list_cur->cur_count++;
+                    node_to->level = level_cur;
+                    trace_printk("mig phase, page_to's node found update state changed \n");
+                }
+                trace_printk("mig phase, page_to's node found update success \n");
+            }
+unlock:
+            spin_unlock(&zone->pbutil_list_lock);
+            
+        }
+#endif
+#endif
 	} else {
 		if (rc != -EAGAIN) {
 			if (likely(!__PageMovable(page))) {
@@ -1309,7 +1450,6 @@ int migrate_pages(struct list_head *from, new_page_t get_new_page,
 
 #ifdef CONFIG_SON     
 #if SON_REFSCAND_ENABLE
-
     struct compact_control *cc = NULL;    
     struct page *page_middle_pb;
     page_utilmap_t *utilmap;
@@ -1318,7 +1458,6 @@ int migrate_pages(struct list_head *from, new_page_t get_new_page,
     if(reason == MR_COMPACTION){
         cc = (struct compact_control*)private;
     }
-
 #endif
 #endif
 
@@ -1337,15 +1476,15 @@ int migrate_pages(struct list_head *from, new_page_t get_new_page,
 
 #endif
 #endif
-
-			if (PageHuge(page))
+			if (PageHuge(page)){
 				rc = unmap_and_move_huge_page(get_new_page,
 						put_new_page, private, page,
 						pass > 2, mode, reason);
-			else
+            }else{
 				rc = unmap_and_move(get_new_page, put_new_page,
 						private, page, pass > 2, mode,
 						reason);
+            }
 
 			switch(rc) {
 			case -ENOMEM:

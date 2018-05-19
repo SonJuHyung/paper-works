@@ -3,11 +3,9 @@
 
 //#include <linux/mm.h>
 
-#define SON_SUCCESS         0
-#define SON_ENABLE          1
-#define SON_DISABLE         0
-#define SON_COMP_ORIGIN     SON_DISABLE
-#define SON_COMP_REVISD     SON_ENABLE
+#define SON_SUCCESS             0
+#define SON_ENABLE              1
+#define SON_DISABLE             0
 
 #define SON_PBSCAND_ENABLE      1
 #define SON_REFSCAND_ENABLE     0
@@ -19,7 +17,8 @@
  * VERSION 1. Monitoring phase
  * paper's monitoring kernel thread related variables
  */
-#if SON_PBSCAND_ENABLE
+#if SON_PBSCAND_ENABLE 
+
 /* page block usage info or state info which 
  * is used in son_pbscand kernel thread  */
 typedef enum {                  /* page is */
@@ -110,7 +109,16 @@ void son_kthread_refcount_del_entry(struct mm_struct *mm);
 #define SON_PBSTAT_ERR_NODE_NOT_PRESENT     -4
 
 /* bitmap size in pbutil_node_t */
-#define PBUTIL_BMAP_SIZE    512
+#define PBUTIL_BMAP_SIZE        512
+#define SON_COMP_PBBATCH_MIG    32
+#define SON_COMP_PBBATCH_FRE    32
+
+/* compactino mode  */
+typedef enum {
+    SON_COMPMODE_ORIGIN,
+    SON_COMPMODE_REVISD,
+    SON_COMPMODE_MAX
+} comp_mode_t;
 
 typedef enum {                  /* page block is ... */
     SON_PB_WHITE,               /* 0%        used    */
@@ -143,6 +151,7 @@ typedef enum {
     SON_PB_MOVABLE,             
     SON_PB_RECLAIMABLE,
     SON_PB_BUDDY,               
+    SON_PB_ISOLATE,
 } pg_stat_t;
 
 /* page block utilization info node for revised kcompactd */

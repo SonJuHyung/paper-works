@@ -28,10 +28,10 @@ struct proc_dir_entry* son_parent_dir;
 
 #if SON_PBSCAND_ENABLE
 /* proc/son/scan_pbstate_enable  */
-struct proc_dir_entry* son_scan_pbstate_enable_data; 
+struct proc_dir_entry* son_scan_pbstat_enable_data; 
 atomic_t son_scan_pbstate_enable;	
 
-static ssize_t son_read_pbstate_enable(struct file *filep, 
+static ssize_t son_read_pbstat_enable(struct file *filep, 
         char __user *buf, size_t size, loff_t *ppos)
 {
 	char buf_read[SON_BUFLEN];
@@ -42,7 +42,7 @@ static ssize_t son_read_pbstate_enable(struct file *filep,
 	return simple_read_from_buffer(buf, size, ppos, buf_read, len);
 }
 
-static ssize_t son_write_pbstate_enable(struct file *filep, 
+static ssize_t son_write_pbstat_enable(struct file *filep, 
 		const char __user *buf, size_t size, loff_t *ppos)
 {
     char buf_write[SON_BUFLEN];
@@ -79,9 +79,9 @@ static ssize_t son_write_pbstate_enable(struct file *filep,
 }
 
 
-static struct file_operations son_scan_pbstate_enable_ops = {
-	.read = son_read_pbstate_enable,
-    .write = son_write_pbstate_enable,    
+static struct file_operations son_scan_pbstat_enable_ops = {
+	.read = son_read_pbstat_enable,
+    .write = son_write_pbstat_enable,    
 	.llseek = generic_file_llseek,
 };
 
@@ -221,8 +221,15 @@ char * const pbstat_names[SON_PB_MAX] = {
 	 "Yellow",
 	 "Red",
 	 "Unmovable",
-     "Isolated",
+     "Isolated(migrate)",
+     "Isolated(free)"
 };
+
+char * const comp_mode_names[SON_COMPMODE_MAX] = {
+	 "Default",
+	 "Revised",
+};
+
 
 static void *pbstat_start(struct seq_file *m, loff_t *pos)
 {
@@ -509,11 +516,13 @@ static ssize_t son_write_pbstat_comp_mig_level(struct file *filep,
     len_written = simple_write_to_buffer(buf_write,SON_BUFLEN,ppos,buf,size);
 
     if(!kstrtol(buf_write,0,&temp_write)){
-        if(temp_write >= SON_PB_SYSFS_MIN && temp_write <= SON_PB_SYSFS_MAX && 
-                temp_write < cur_free_level &&
-                temp_write != cur_mig_level){
-            /* if current scanning state is not enabled make it enabled*/
-            atomic_set(&son_pbstat_comp_mig_level,temp_write);
+        if(temp_write >= SON_PB_SYSFS_MIN && 
+                temp_write <= SON_PB_SYSFS_MAX && 
+                temp_write < cur_free_level){
+            if(temp_write != cur_mig_level){
+                /* if current scanning state is not enabled make it enabled*/
+                atomic_set(&son_pbstat_comp_mig_level,temp_write);
+            }
         }else{
             /* error stat : data from user is negative value */
             return -EINVAL;
@@ -557,11 +566,13 @@ static ssize_t son_write_pbstat_comp_free_level(struct file *filep,
     len_written = simple_write_to_buffer(buf_write,SON_BUFLEN,ppos,buf,size);
 
     if(!kstrtol(buf_write,0,&temp_write)){
-        if(temp_write >= SON_PB_SYSFS_MIN && temp_write <= SON_PB_SYSFS_MAX && 
-                temp_write > cur_mig_level &&
-                temp_write != cur_free_level){
-            /* if current scanning state is not enabled make it enabled*/
-            atomic_set(&son_pbstat_comp_free_level,temp_write);
+        if(temp_write >= SON_PB_SYSFS_MIN && 
+                temp_write <= SON_PB_SYSFS_MAX && 
+                temp_write > cur_mig_level){
+            if(temp_write != cur_free_level){
+                /* if current scanning state is not enabled make it enabled*/
+                atomic_set(&son_pbstat_comp_free_level,temp_write);
+            }
         }else{
             /* error stat : data from user is negative value */
             return -EINVAL;
@@ -577,19 +588,19 @@ static struct file_operations son_pbstat_comp_free_level_ops = {
 };
 
 
-static ssize_t son_read_refcount_enable(struct file *filep, 
+static ssize_t son_read_pbstat_comp_mode(struct file *filep, 
         char __user *buf, size_t size, loff_t *ppos)
 {
 	char buf_read[SON_BUFLEN];
 	ssize_t len;
-
-	len = scnprintf(buf_read, SON_BUFLEN, "%d\n", atomic_read(&son_scan_refcount_enable));
+    int cur_mode = atomic_read(&son_pbstat_comp_mode);
+    len = scnprintf(buf_read, SON_BUFLEN, "%10s (0:Default/1:Revised) \n", comp_mode_names[cur_mode]);
 
 	return simple_read_from_buffer(buf, size, ppos, buf_read, len);
 
 }
 
-static ssize_t son_write_refcount_enable(struct file *filep, 
+static ssize_t son_write_pbstat_comp_mode(struct file *filep, 
 		const char __user *buf, size_t size, loff_t *ppos)
 {
     char buf_write[SON_BUFLEN];
@@ -603,18 +614,12 @@ static ssize_t son_write_refcount_enable(struct file *filep,
     len_written = simple_write_to_buffer(buf_write,SON_BUFLEN,ppos,buf,size);
 
     if(!kstrtol(buf_write,0,&temp_write)){
-        if(temp_write > 0){
-            if(!atomic_read(&son_scan_refcount_enable)){
-                /* if current scanning state is not enabled make it enabled*/
-                atomic_set(&son_scan_refcount_enable,SON_ENABLE);
-                wake_up_interruptible(&son_scand_refcount_wait);
+        if(temp_write >= SON_COMPMODE_ORIGIN && 
+                temp_write <= SON_COMPMODE_REVISD){
+            if(atomic_read(&son_pbstat_comp_mode) != temp_write){
+                atomic_set(&son_pbstat_comp_mode,temp_write);
             }
-        }else if(temp_write == 0){
-            if(atomic_read(&son_scan_refcount_enable)){
-                /* if current scanning state is enabled make it disabled */ 
-                atomic_set(&son_scan_refcount_enable,SON_DISABLE);
-            }
-        }else if(temp_write < 0){
+        }else{
             /* error stat : data from user is negative value */
             return -EINVAL;
         }
@@ -623,8 +628,8 @@ static ssize_t son_write_refcount_enable(struct file *filep,
 }
 
 static struct file_operations son_pbstat_comp_mode_ops = {
-	.read = son_read_refcount_enable,
-    .write = son_write_refcount_enable,    
+	.read = son_read_pbstat_comp_mode,
+    .write = son_write_pbstat_comp_mode,
 	.llseek = generic_file_llseek,
 };
 
@@ -642,8 +647,8 @@ static int __init son_proc_init(void)
     atomic_set(&son_scan_pbstate_enable, SON_DISABLE);
 
     /*  page usage kernel thread related entry  */
-	son_scan_pbstate_enable_data = proc_create("scan_pbstate_enable", 0, son_parent_dir, &son_scan_pbstate_enable_ops);
-    if(!son_scan_pbstate_enable_data)
+	son_scan_pbstat_enable_data = proc_create("scan_pbstat_enable", 0, son_parent_dir, &son_scan_pbstat_enable_ops);
+    if(!son_scan_pbstat_enable_data)
         goto out;
 #endif 
 
@@ -696,7 +701,7 @@ static int __init son_proc_init(void)
         goto out;
 
     /*  page block utilization based sysfs compaction threshold level.  */
-    atomic_set(&son_pbstat_comp_mode, SON_COMP_ORIGIN);
+    atomic_set(&son_pbstat_comp_mode, SON_COMPMODE_ORIGIN);
 	son_pbstat_comp_mode_data = proc_create("pbstat_compact_mode", 0, son_parent_dir, &son_pbstat_comp_mode_ops);
     if(!son_pbstat_comp_mode_data)
         goto out;
@@ -732,8 +737,8 @@ out:
 #endif
 
 #if SON_PBSCAND_ENABLE
-    if(son_scan_pbstate_enable_data)
-        proc_remove(son_scan_pbstate_enable_data);
+    if(son_scan_pbstat_enable_data)
+        proc_remove(son_scan_pbstat_enable_data);
 #endif
     if(son_parent_dir)
         proc_remove(son_parent_dir);

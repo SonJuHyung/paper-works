@@ -210,10 +210,12 @@ struct compact_control {
 struct son_compact_control{
     struct list_head freepages;	/* List of free pages to migrate to         init */
     struct list_head migratepages;	/* List of pages being migrated         init */
-    unsigned long nr_freepages;	/* Number of isolated free pages            init */
+    unsigned long nr_freepages;	/* Number of isolated free pages            init */ 
+    unsigned long nr_cur_isolated_freepages;
     unsigned long nr_migratepages;	/* Number of pages to migrate           init */
-    unsigned long nr_migratedpb; /* scanned page block count                 init */
-    unsigned long nr_freedpb; /* scanned page block count                 init */
+    unsigned long nr_cur_isolated_migratepages;
+    unsigned long nr_isolated_migratepb; /* scanned page block count                 init */
+    unsigned long nr_isolated_freepb; /* scanned page block count                 init */
     unsigned long nr_clearedpb; /* cleared page block count                 init */
     unsigned long total_migrate_scanned; /* total migrated page count       init FIXME*/
     unsigned long total_free_scanned; /* total free scannned                init FIXME*/

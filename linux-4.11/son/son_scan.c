@@ -980,36 +980,42 @@ int son_pbutil_update_alloc(struct page *page, unsigned int order)
              * from previous level's linked list and insert page into 
              * current level's linked list, */
 
+            pre_level = pbutil_node->level; 
             /* Step 3. Update pbutil_node's bitmap and page count */ 
-
-            if(mgtype == SON_PB_MOVABLE){
-                /* if current allocation is movable allocation 
-                 * log status to bitmap  */
-
-                bitmap_set(pbutil_node->pbutil_movable_bitmap, 
-                        low_pfn - pb_start_pfn, low_end_pfn - low_pfn);
-
-                pbutil_node->used_movable_page += (low_end_pfn - low_pfn);
-                pre_level = pbutil_node->level; 
-                if(pre_level == SON_PB_UMOV)
-                    cur_level = pre_level;
-                else
-                    cur_level = calc_pbutil_level(pbutil_node->used_movable_page);
-                /* if previous level is SON_PB_UMOV, type of level 
-                 * can not be changed until all unmovable page freed  
-                 * so keep previous level */
-
-            }else{
-                /* if current allocation is unmovable allocation 
-                 * just increases unmovable count and doesn't 
-                 * log allocation status to bitmap */
-                pbutil_node->used_unmovable_page += (low_end_pfn - low_pfn);
-                pre_level = pbutil_node->level;
-                cur_level = SON_PB_UMOV; 
-            }
-
-            if(pre_level == SON_PB_ISOMG || SON_PB_ISOFR)
+            if(pre_level == SON_PB_ISOMG || pre_level == SON_PB_ISOFR){
+                if(mgtype == SON_PB_MOVABLE){
+                    bitmap_set(pbutil_node->pbutil_movable_bitmap, 
+                            low_pfn - pb_start_pfn, low_end_pfn - low_pfn);
+                    pbutil_node->used_movable_page += (low_end_pfn - low_pfn);
+                }else{
+                    pbutil_node->used_unmovable_page += (low_end_pfn - low_pfn);
+                }            
                 goto out;
+            }else{
+                if(mgtype == SON_PB_MOVABLE){
+                    /* if current allocation is movable allocation 
+                     * log status to bitmap  */
+
+                    bitmap_set(pbutil_node->pbutil_movable_bitmap, 
+                            low_pfn - pb_start_pfn, low_end_pfn - low_pfn);
+
+                    pbutil_node->used_movable_page += (low_end_pfn - low_pfn);
+                    if(pre_level == SON_PB_UMOV)
+                        cur_level = pre_level;
+                    else
+                        cur_level = calc_pbutil_level(pbutil_node->used_movable_page);
+                    /* if previous level is SON_PB_UMOV, type of level 
+                     * can not be changed until all unmovable page freed  
+                     * so keep previous level */
+
+                }else{
+                    /* if current allocation is unmovable allocation 
+                     * just increases unmovable count and doesn't 
+                     * log allocation status to bitmap */
+                    pbutil_node->used_unmovable_page += (low_end_pfn - low_pfn);
+                    cur_level = SON_PB_UMOV; 
+                }
+            }
 
             if(pre_level != cur_level){
                 /* if previous level is SON_PB_UMOV, can not reach here  
@@ -1051,17 +1057,6 @@ int son_pbutil_update_alloc(struct page *page, unsigned int order)
             trace_printk("alloc found, success,pb(%lu ~ %lu),pg(%lu ~ %lu),order(%d/%lu/%lu),pbstat_names(%d) \n",pb_start_pfn, pb_end_pfn, pfn, pfn_end, order, pbutil_node->used_movable_page,pbutil_node->used_unmovable_page,cur_level);
 #endif
 
-#if 0
-            /* 
-             * Step 5. update radix tree.
-             */
-            if(!pbutil_node->used_unmovable_page && !pbutil_node->used_movable_page){
-                spin_lock(&pbutil_tree->pbutil_tree_lock);
-                son_pbutil_node_delete(pbutil_tree, pb_start_pfn);
-                son_pbutil_node_free(pbutil_node);
-                spin_unlock(&pbutil_tree->pbutil_tree_lock);
-            }                                   
-#endif
         }
     }
 out:
@@ -1083,7 +1078,6 @@ int son_pbutil_update_free(struct page *page, unsigned int order)
     unsigned long low_pfn, low_end_pfn;
     pb_stat_t cur_level = SON_PB_WHITE, pre_level = SON_PB_WHITE;
     int mgtype, ret = SON_PBSTAT_SUCCESS;
-
     /* Step 1. Initialize vatiables.*/
     zone = page_zone(page);
     spin_lock(&zone->pbutil_list_lock);
@@ -1132,95 +1126,105 @@ int son_pbutil_update_free(struct page *page, unsigned int order)
 #if SON_DEBUG_ENABLE
             trace_printk("pbutil_node is found in allocating process \n");                
 #endif
-            
-            /* Step 3. Update pbutil_node's bitmap and page count */ 
-            if(mgtype == SON_PB_MOVABLE){
+            pre_level = pbutil_node->level; 
+            if(pre_level == SON_PB_ISOMG || pre_level == SON_PB_ISOFR){                
                
-                /* if current allocation is movable allocation 
-                 * log status to bitmap  */
-                pre_level = pbutil_node->level; 
-                bitmap_clear(pbutil_node->pbutil_movable_bitmap, 
-                        low_pfn - pb_start_pfn, low_end_pfn - low_pfn);
-                pbutil_node->used_movable_page -= (low_end_pfn - low_pfn);
-                if(pre_level == SON_PB_UMOV)
-                    cur_level = pre_level;
-                else
-                    cur_level = calc_pbutil_level(pbutil_node->used_movable_page);
-                /* if previous level is SON_PB_UMOV, type of level 
-                 * can not be changed until all unmovable page freed  
-                 * we area freeing movable page so keep previous level */
-            }else if (mgtype == SON_PB_ISOLATE) {
-                pre_level = pbutil_node->level;
-                cur_level = calc_pbutil_level(pbutil_node->used_movable_page);
-            } else {                
-                /* if current allocation is unmovable allocation 
-                 * just increases unmovable count and doesn't 
-                 * log allocation status to bitmap */
-                pre_level = pbutil_node->level; 
-                pbutil_node->used_unmovable_page -= (low_end_pfn - low_pfn);
+                if(mgtype == SON_PB_ISOLATE){
+                    trace_printk("son_free, %10s,used:%lu,iso:%lu \n", 
+                            pbstat_names[pre_level],
+                            pbutil_node->used_movable_page,
+                            pbutil_node->isolated_movable_pages);
 
-                if(pbutil_node->used_unmovable_page <= 0)
-                    cur_level = calc_pbutil_level(pbutil_node->used_movable_page);
-                else
-                    cur_level = pre_level;
-                /* all the unmovable pages are freed we can allocate 
-                 * THP in this page block by compaction!! */
+                    if(pbutil_node->isolated_movable_pages > 0){
+                        pbutil_node->isolated_movable_pages--;
+                        if(pbutil_node->isolated_movable_pages > 0)
+                            goto out;                    
+                        else
+                            cur_level = calc_pbutil_level(pbutil_node->used_movable_page);
+                    }else if(!pbutil_node->isolated_movable_pages){
+                        cur_level = calc_pbutil_level(pbutil_node->used_movable_page); 
+                    }else{
+                        trace_printk("error pbutil_node's isolated_movable_pages is negative number \n");
+                        goto out;
+                    }                                          
+                       
+                }else{
+                    if(mgtype == SON_PB_MOVABLE){
+                        bitmap_clear(pbutil_node->pbutil_movable_bitmap, 
+                                low_pfn - pb_start_pfn, low_end_pfn - low_pfn);
+                        pbutil_node->used_movable_page -= (low_end_pfn - low_pfn);
+                    } else {                
+                        pbutil_node->used_unmovable_page -= (low_end_pfn - low_pfn);
+                    }
+                    goto out;     
+                }        
+            }else{ 
+                /* Step 3. Update pbutil_node's bitmap and page count */ 
+                if(mgtype == SON_PB_MOVABLE){
+
+                    /* if current allocation is movable allocation 
+                     * log status to bitmap  */
+                    bitmap_clear(pbutil_node->pbutil_movable_bitmap, 
+                            low_pfn - pb_start_pfn, low_end_pfn - low_pfn);
+                    pbutil_node->used_movable_page -= (low_end_pfn - low_pfn);
+                    if(pre_level == SON_PB_UMOV)
+                        cur_level = pre_level;
+                    else
+                        cur_level = calc_pbutil_level(pbutil_node->used_movable_page);
+                    /* if previous level is SON_PB_UMOV, type of level 
+                     * can not be changed until all unmovable page freed  
+                     * we area freeing movable page so keep previous level */
+                } else {
+                    /* if current allocation is unmovable allocation 
+                     * just increases unmovable count and doesn't 
+                     * log allocation status to bitmap */
+                    pbutil_node->used_unmovable_page -= (low_end_pfn - low_pfn);
+
+                    if(pbutil_node->used_unmovable_page <= 0)
+                        cur_level = calc_pbutil_level(pbutil_node->used_movable_page);
+                    else
+                        cur_level = pre_level;
+                    /* all the unmovable pages are freed we can allocate 
+                     * THP in this page block by compaction!! */
+                }
             }
 
-            
-            if(pre_level == SON_PB_ISOMG){
-                goto out;
-            }else if(pre_level == SON_PB_ISOFR){
-                pbutil_node->isolated_movable_pages--;
-                if(!pbutil_node->isolated_movable_pages){
-                    pbutil_list_pre = &zone->son_pbutil_list[pre_level];
-                    list_del(&pbutil_node->pbutil_level);
-                    pbutil_list_pre->cur_count--;
+            if(pre_level != cur_level){
+                /* if previous level is SON_PB_UMOV, can not reach here  
+                 * only consider level transition between movable page block*/
 
-                    pbutil_list = &zone->son_pbutil_list[cur_level];
-                    list_add_tail(&pbutil_node->pbutil_level,&pbutil_list->pbutil_list_head);
-                    pbutil_list->cur_count++;
-                    pbutil_node->level = cur_level;
-                }                                
-            }else{
-
-                if(pre_level != cur_level){
-                    /* if previous level is SON_PB_UMOV, can not reach here  
-                     * only consider level transition between movable page block*/
-
-                    /* 
-                     * Step 4. delete page from previous level linked list and
-                     *         insert page into current level linked list.
-                     */
+                /* 
+                 * Step 4. delete page from previous level linked list and
+                 *         insert page into current level linked list.
+                 */
 #if 0
-                    /* version 2 */
-                    pbutil_list_pre = &zone->son_pbutil_list[pre_level];
-                    spin_lock(&pbutil_list_pre->pbutil_list_lock);
-                    list_del(&pbutil_node->pbutil_level);
-                    pbutil_list_pre->cur_count--;
-                    spin_unlock(&pbutil_list_pre->pbutil_list_lock);
+                /* version 2 */
+                pbutil_list_pre = &zone->son_pbutil_list[pre_level];
+                spin_lock(&pbutil_list_pre->pbutil_list_lock);
+                list_del(&pbutil_node->pbutil_level);
+                pbutil_list_pre->cur_count--;
+                spin_unlock(&pbutil_list_pre->pbutil_list_lock);
 
-                    pbutil_list = &zone->son_pbutil_list[cur_level];
-                    spin_lock(&pbutil_list->pbutil_list_lock);
-                    list_add_tail(&pbutil_node->pbutil_level,&pbutil_list->pbutil_list_head);
-                    pbutil_list->cur_count++;
-                    spin_unlock(&pbutil_list->pbutil_list_lock);
+                pbutil_list = &zone->son_pbutil_list[cur_level];
+                spin_lock(&pbutil_list->pbutil_list_lock);
+                list_add_tail(&pbutil_node->pbutil_level,&pbutil_list->pbutil_list_head);
+                pbutil_list->cur_count++;
+                spin_unlock(&pbutil_list->pbutil_list_lock);
 
-                    pbutil_node->level = cur_level;
+                pbutil_node->level = cur_level;
 #endif 
-                    /* version 1 */
-                    //                spin_lock(&zone->pbutil_list_lock);
-                    pbutil_list_pre = &zone->son_pbutil_list[pre_level];
-                    list_del(&pbutil_node->pbutil_level);
-                    pbutil_list_pre->cur_count--;
+                /* version 1 */
+                //                spin_lock(&zone->pbutil_list_lock);
+                pbutil_list_pre = &zone->son_pbutil_list[pre_level];
+                list_del(&pbutil_node->pbutil_level);
+                pbutil_list_pre->cur_count--;
 
-                    pbutil_list = &zone->son_pbutil_list[cur_level];
-                    list_add_tail(&pbutil_node->pbutil_level,&pbutil_list->pbutil_list_head);
-                    pbutil_list->cur_count++;
-                    pbutil_node->level = cur_level;
-                    //                spin_unlock(&zone->pbutil_list_lock);
-                }                      
-            }
+                pbutil_list = &zone->son_pbutil_list[cur_level];
+                list_add_tail(&pbutil_node->pbutil_level,&pbutil_list->pbutil_list_head);
+                pbutil_list->cur_count++;
+                pbutil_node->level = cur_level;
+                //                spin_unlock(&zone->pbutil_list_lock);
+            }                      
 #if SON_DEBUG_ENABLE
             trace_printk("free found, success,pb(%lu ~ %lu),pg(%lu ~ %lu),order(%d/%lu/%lu),pbstat_names(%d) \n",pb_start_pfn, pb_end_pfn, pfn, pfn_end, order, pbutil_node->used_movable_page,pbutil_node->used_unmovable_page,cur_level);
 #endif

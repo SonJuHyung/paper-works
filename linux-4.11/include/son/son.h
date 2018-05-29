@@ -110,8 +110,8 @@ void son_kthread_refcount_del_entry(struct mm_struct *mm);
 
 /* bitmap size in pbutil_node_t */
 #define PBUTIL_BMAP_SIZE        512
-#define SON_COMP_PBBATCH_MIG    32
-#define SON_COMP_PBBATCH_FRE    32
+#define SON_COMP_PBBATCH_MIG    64
+#define SON_COMP_PBBATCH_FRE    64
 
 /* compactino mode  */
 typedef enum {

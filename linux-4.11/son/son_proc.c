@@ -278,13 +278,14 @@ static void son_walk_zones_in_node(struct seq_file *m, pg_data_t *pgdat,
 static void pbstat_show_print(struct seq_file *m, pg_data_t *pgdat, struct zone *zone)
 {
 	int index;
-
+//    spin_lock(&zone->pbutil_list_lock);
 	seq_printf(m, "Node %d(%d), zone %8s - ", pgdat->node_id, pgdat->son_pbutil_tree.node_count, zone->name);
 
 	for (index = 0; index < SON_PB_MAX; ++index)
-		seq_printf(m, "%10s(%5d) ", pbstat_names[index],zone->son_pbutil_list[index].cur_count);
-        
+		seq_printf(m, "%10s(%5d) ", pbstat_names[index],zone->son_pbutil_list[index].cur_count);       
 	seq_putc(m, '\n');
+//    spin_unlock(&zone->pbutil_list_lock);
+
 }
 
 static int pbstat_show(struct seq_file *m, void *arg)

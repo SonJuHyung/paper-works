@@ -247,7 +247,7 @@ struct page {
 
 #if SON_PBSTAT_ENABLE
     int mgtype;
-    /* linked list in zone->  */
+    /* linked list in zone->  */ 
 #endif
 
 #endif

@@ -155,6 +155,92 @@ void putback_movable_page(struct page *page)
 	__ClearPageIsolated(page);
 }
 
+#ifdef CONFIG_SON
+#if SON_PBSTAT_ENABLE
+/* It should be called on page which is PG_movable */
+void son_putback_movable_page(struct page *page)
+{
+	struct address_space *mapping;
+    struct zone *zone = NULL;
+    pg_data_t *pgdat = NULL;
+    pbutil_tree_t *pbutil_tree = NULL;
+    pbutil_node_t *pbutil_node = NULL;
+    pbutil_list_t *pbutil_list_cur = NULL, *pbutil_list_pre = NULL;   
+    unsigned long pfn = 0, pb_start_pfn = 0;
+    int cur_level,pre_level;
+
+    lock_page(page);
+   
+	VM_BUG_ON_PAGE(!PageLocked(page), page);
+	VM_BUG_ON_PAGE(!PageMovable(page), page);
+	VM_BUG_ON_PAGE(!PageIsolated(page), page);
+
+	mapping = page_mapping(page);
+	mapping->a_ops->putback_page(page);
+	__ClearPageIsolated(page);
+
+    unlock_page(page);
+    put_page(page);
+
+#if 1
+    /* putback isolated pb in pbutil info  */
+    zone = page_zone(page);
+    pgdat = zone->zone_pgdat;       
+    pfn = page_to_pfn(page);
+    pb_start_pfn = block_start_pfn(pfn, pageblock_order);
+    pbutil_tree = &pgdat->son_pbutil_tree;
+
+    spin_lock(&zone->pbutil_list_lock);
+
+    pbutil_node = son_pbutil_node_lookup(pbutil_tree, pb_start_pfn);
+    if(pbutil_node){
+        pre_level = pbutil_node->level;
+        if(pre_level == SON_PB_ISOMG){ 
+            if(pbutil_node->isolated_movable_pages > 0)
+                pbutil_node->isolated_movable_pages--;
+
+            if(!pbutil_node->isolated_movable_pages){
+                /* recalculate level and add to new list */
+                cur_level = calc_pbutil_level(pbutil_node->used_movable_page);
+                trace_printk("putback-iso:%lu/used:%lu (pre:%10s,cur:%10s)\n",
+                        pbutil_node->isolated_movable_pages,
+                        pbutil_node->used_movable_page,
+                        pbstat_names[pre_level],                           
+                        pbstat_names[cur_level]);
+                if(pre_level != cur_level){
+                    pbutil_list_pre = &zone->son_pbutil_list[pre_level];
+                    pbutil_list_cur = &zone->son_pbutil_list[cur_level];
+
+                    /* remove node from isomg list  */
+                    list_del(&pbutil_node->pbutil_level);
+                    pbutil_list_pre->cur_count--;
+
+                    list_add_tail(&pbutil_node->pbutil_level,&pbutil_list_cur->pbutil_list_head);
+                    pbutil_list_cur->cur_count++;
+
+                    pbutil_node->level = cur_level;                   
+                    trace_printk("mig phase(putback movable), move_pb, used:%lu/iso:%lu(%10s:%d -> %10s:%d)\n", 
+                            pbutil_node->used_movable_page,
+                            pbutil_node->isolated_movable_pages,
+                            pbstat_names[pre_level], 
+                            pbutil_list_pre->cur_count, 
+                            pbstat_names[cur_level], 
+                            pbutil_list_cur->cur_count); 
+                }
+
+            }
+        }
+    }else{
+        trace_printk("error,putback isomg phase,node not found \n");
+    }
+    spin_unlock(&zone->pbutil_list_lock);
+#endif
+
+
+}
+#endif
+#endif
+
 /*
  * Put previously isolated pages back onto the appropriate lists
  * from where they were once taken off for compaction/migration.
@@ -202,57 +288,16 @@ void son_putback_movable_pages(struct list_head *l)
 {
 	struct page *page;
 	struct page *page2;
-    struct zone *zone = NULL;
-    pg_data_t *pgdat = NULL;
-    pbutil_tree_t *pbutil_tree = NULL;
-    pbutil_node_t *pbutil_node = NULL;
-    pbutil_list_t *pbutil_list = NULL, *pbutil_list_pre = NULL;   
-    unsigned long pfn, pb_start_pfn;
-    int cur_level,pre_level;
 
-	list_for_each_entry_safe(page, page2, l, lru) {
+    trace_printk("trying to putback pages \n");
+	list_for_each_entry_safe(page, page2, l, lru) {        
 		if (unlikely(PageHuge(page))) {
+            trace_printk("put back movable page but it's THP \n");
 			putback_active_hugepage(page);
 			continue;
-		}
+		}       
+
 		list_del(&page->lru);
-        
-        /* putback isolated pb in pbutil info  */
-        zone = page_zone(page);
-        pgdat = zone->zone_pgdat;
-        pfn = page_to_pfn(page);
-        pb_start_pfn = block_start_pfn(pfn, pageblock_order);
-        pbutil_tree = &pgdat->son_pbutil_tree;
-        pre_level = pbutil_node->level;
-        
-        spin_lock(&zone->pbutil_list_lock);
-
-        pbutil_node = son_pbutil_node_lookup(pbutil_tree, pb_start_pfn);
-        if(pbutil_node){            
-            if(pre_level == SON_PB_ISOMG){
-                pbutil_node->isolated_movable_pages--;
-
-                if(!pbutil_node->isolated_movable_pages){
-                    pbutil_list_pre = &zone->son_pbutil_list[pre_level];
-
-                    /* remove node from isomg list  */
-                    list_del(&pbutil_node->pbutil_level);
-                    pbutil_list_pre->cur_count--;
-
-                    /* recalculate level and add to new list */
-                    cur_level = calc_pbutil_level(pbutil_node->used_movable_page);
-                    pbutil_list = &zone->son_pbutil_list[cur_level];
-
-                    list_add_tail(&pbutil_node->pbutil_level,&pbutil_list->pbutil_list_head);
-                    pbutil_list->cur_count++;
-                }
-
-            }
-        }else{
-            trace_printk("putback isomg phase,node not found \n");
-        }
-        spin_unlock(&zone->pbutil_list_lock);
-
 		/*
 		 * We isolated non-lru movable page so here we can use
 		 * __PageMovable because LRU page's mapping cannot have
@@ -261,10 +306,13 @@ void son_putback_movable_pages(struct list_head *l)
 		if (unlikely(__PageMovable(page))) {
 			VM_BUG_ON_PAGE(!PageIsolated(page), page);
 			lock_page(page);
-			if (PageMovable(page))
+			if (PageMovable(page)){
+                trace_printk("ver 1 \n");
 				putback_movable_page(page);
-			else
+            }else{
+                trace_printk("ver 2 \n");
 				__ClearPageIsolated(page);
+            }
 			unlock_page(page);
 			put_page(page);
 		} else {
@@ -273,10 +321,12 @@ void son_putback_movable_pages(struct list_head *l)
 			putback_lru_page(page);
 		}
 	}
-    if(pbutil_node->level == SON_PB_ISOMG && pbutil_list_pre->cur_count)
+#if 0
+    if(zone && !zone->son_pbutil_list[SON_PB_ISOMG].cur_count)
         trace_printk("putback isomg phase,all isomg pb is putbacked \n");
     else
         trace_printk("putback isomg phase,isomg page left ...why? \n");     
+#endif
 }
 #endif
 #endif
@@ -1023,6 +1073,8 @@ static int __unmap_and_move(struct page *page, struct page *newpage,
 		lock_page(page);
 	}
 
+    page->mgtype = SON_PB_ISOLATE;
+
 	if (PageWriteback(page)) {
 		/*
 		 * Only in the case of a full synchronous migration is it
@@ -1286,7 +1338,7 @@ static ICE_noinline int son_unmap_and_move(new_page_t get_new_page,
 {
 	int rc = MIGRATEPAGE_SUCCESS;
 	int *result = NULL;
-    int rc_tmp = MIGRATE_SUCCESS_SOMETHING;
+    int rc_detail = MIGRATE_SUCCESS_SOMETHING;
 	struct page *newpage;
     struct page *page_from = NULL, *page_to = NULL; 
     struct zone *zone = NULL;
@@ -1298,11 +1350,17 @@ static ICE_noinline int son_unmap_and_move(new_page_t get_new_page,
     pb_stat_t level_pre, level_cur;
     pbutil_list_t *pbutil_list_pre = NULL, *pbutil_list_cur = NULL;
     
+    /* - get new page from get_new_page function. 
+     *   corresponding node of newpage is already 
+     *   moved to SON_PB_ISOFR list 
+     * - mgtype of head page in newpage's page block 
+     *   is already marked as SON_PB_ISOLATE */
 
 	newpage = get_new_page(page, private, &result);
 	if (!newpage)
 		return -ENOMEM;
 
+    /* if target page is already freed...  */
 	if (page_count(page) == 1) {
 		/* page was freed from under us. So we are done. */
 		ClearPageActive(page);
@@ -1313,15 +1371,24 @@ static ICE_noinline int son_unmap_and_move(new_page_t get_new_page,
 				__ClearPageIsolated(page);
 			unlock_page(page);
 		}
+        /* it is not failed but nothing is migrated 
+         * put back newpage to freelist */
 		if (put_new_page)
 			put_new_page(newpage, private);
 		else
 			put_page(newpage);
-        /* we need to handle this situation differently  */
-        rc_tmp = MIGRATE_SUCCESS_NOTHING;
+        /* we need to handle this situation differently  
+         * so, set rc_detail to MIGRATE_SUCCESS_NOTHING
+         *  - page from migrate list is freed 
+         *    so, node state need to be updated correctly 
+         *  - page from free list is put backed to freelist 
+         *    so, nothing need to be done */
+        rc_detail = MIGRATE_SUCCESS_NOTHING;
 		goto out;
 	}
 
+    /* if reason is MR_COMPACTION, skip thie step
+     * (migration does not consider compound pages) */
 	if (unlikely(PageTransHuge(page))) {
 		lock_page(page);
 		rc = split_huge_page(page);
@@ -1329,8 +1396,8 @@ static ICE_noinline int son_unmap_and_move(new_page_t get_new_page,
 		if (rc)
 			goto out;
 	}
-
-	rc = __unmap_and_move(page, newpage, force, mode);
+	
+    rc = __unmap_and_move(page, newpage, force, mode);
 	if (rc == MIGRATEPAGE_SUCCESS)
 		set_page_owner_migrate_reason(newpage, reason);
 
@@ -1369,62 +1436,69 @@ out:
 			 */
 			if (!test_set_page_hwpoison(page))
 				num_poisoned_pages_inc();
-		}
+		}else if(reason == MR_COMPACTION){
  
-        if(reason == MR_COMPACTION){
+            if(rc_detail == MIGRATE_SUCCESS_NOTHING){
+                /* nothing is migrated original page is just freed 
+                 *  - update page_from's node state count */ 
+                trace_printk("test -1-1 \n");
 
-            if(rc_tmp == MIGRATE_SUCCESS_NOTHING){
-                /* nothing is migrated original page is just freed */
-                /* new page 는 freelist로 돌아가고, mig page는 free 되었으므로 
-                 * miglist 에서 제거된 상태 -> page_to 만 updage 해주면 됨*/ 
-               
-                page_to = newpage;
-                pfn_to = page_to_pfn(page_to);
-                pfn_startpb_to = block_start_pfn(pfn_to,pageblock_order);
+                page_from = page;
+                zone = page_zone(page_from);
                 pgdat = zone->zone_pgdat;
                 pbutil_tree = &pgdat->son_pbutil_tree;
+                pfn_from = page_to_pfn(page_from);
+                pfn_startpb_from = block_start_pfn(pfn_from, pageblock_order);
 
                 spin_lock(&zone->pbutil_list_lock);
 
                  /* search pbutil_node which will be migrated from */ 
-                node_to = son_pbutil_node_lookup(pbutil_tree, pfn_startpb_to);
-                if(!node_to){
-                    trace_printk("mig phase(nothing), page_to's node not found \n");
+                node_from = son_pbutil_node_lookup(pbutil_tree, pfn_startpb_from);
+                if(!node_from){
+                    trace_printk("mig phase(nothing), error, page_from's node not found \n");
                     goto unlock_nothing;
                 }                
-                trace_printk("mig phase(nothing), page_to's node found update \n");
-                node_to->isolated_movable_pages--; 
+                trace_printk("mig phase(nothing), page_from's node found decrease isolated count \n");
+                node_from->isolated_movable_pages--; 
 
-                if(!node_to->isolated_movable_pages){
-                    level_pre = node_to->level;
+                if(!node_from->isolated_movable_pages){
+                    level_pre = node_from->level;
                     level_cur = calc_pbutil_level(node_from->used_movable_page);
 
                     if(level_cur != level_pre){
                         pbutil_list_pre = &zone->son_pbutil_list[level_pre];
+                        pbutil_list_cur = &zone->son_pbutil_list[level_cur];
+
                         list_del(&node_from->pbutil_level);
                         pbutil_list_pre->cur_count--;
 
-                        pbutil_list_cur = &zone->son_pbutil_list[level_cur];
                         list_add_tail(&node_from->pbutil_level,&pbutil_list_cur->pbutil_list_head);
                         pbutil_list_cur->cur_count++;
+
                         node_from->level = level_cur;
-                        trace_printk("mig phase(nothing), page_to's node found update state changed \n");
+                        trace_printk("mig phase(nothing), page_from's node state change from %10s to %10s \n", 
+                                pbstat_names[level_pre], pbstat_names[level_cur]);
+                    }else{
+                        trace_printk("mig phase(nothing), error, page_from's pb isolated count is zero but state not changed %lu \n", 
+                                node_from->isolated_movable_pages);
                     }
-                    trace_printk("mig phase(nothing), page_to's node found update success \n");                   
                 }
 unlock_nothing: 
                 spin_unlock(&zone->pbutil_list_lock);
 
-            } else if (rc_tmp == MIGRATE_SUCCESS_SOMETHING){
+            } else if (rc_detail == MIGRATE_SUCCESS_SOMETHING){
+
                 page_from = page;
-                page_to = newpage;
-                pfn_from = page_to_pfn(page_from);
-                pfn_to = page_to_pfn(page_to);
-                pfn_startpb_from = block_start_pfn(pfn_from,pageblock_order);
-                pfn_startpb_to = block_start_pfn(pfn_to,pageblock_order);
                 zone = page_zone(page_from);
                 pgdat = zone->zone_pgdat;
                 pbutil_tree = &pgdat->son_pbutil_tree;
+
+                pfn_from = page_to_pfn(page_from);
+                pfn_startpb_from = block_start_pfn(pfn_from,pageblock_order);
+
+                page_to = newpage;
+                pfn_to = page_to_pfn(page_to);
+                pfn_startpb_to = block_start_pfn(pfn_to,pageblock_order);
 
                 spin_lock(&zone->pbutil_list_lock);
                 /* Step 1. update state of page_from from migratelist */ 
@@ -1432,18 +1506,21 @@ unlock_nothing:
                 /* Step 1-1. search node of page_from from migratelist  */
                 node_from = son_pbutil_node_lookup(pbutil_tree, pfn_startpb_from);
                 if(!node_from){
-                    trace_printk("mig phase(something), page_from's node not found \n");
+                    trace_printk("mig phase(something), error, page_from's node not found \n");
                     goto unlock_something;
                 }
 
-                trace_printk("mig phase(something), page_from's node found update \n");
-
-                /* Step 1-2. clear corresponding bitmap to page in page_from  */
-                bitmap_clear(node_from->pbutil_movable_bitmap, 
-                        pfn_from - pfn_startpb_from, 1);
                 /* Step 1-3. decrease used movable page count in node 
-                 * because page_from is unmapped */
-                node_from->used_movable_page--;
+                 * because page_from is unmapped */ 
+#if 1
+                if(node_from->used_movable_page){
+                    node_from->used_movable_page--;
+                    /* Step 1-2. clear corresponding bitmap to page in page_from  */
+                    bitmap_clear(node_from->pbutil_movable_bitmap, 
+                            pfn_from - pfn_startpb_from, 1);
+
+                }
+#endif
                 level_pre = node_from->level;
 
                 /* if page block's state which contains page_from is SON_PB_ISOMG 
@@ -1452,55 +1529,83 @@ unlock_nothing:
                 if(level_pre == SON_PB_ISOMG){
                     /* Step 1-4. decrease isolate count and check if list state 
                      * need to be updated */
-                    node_from->isolated_movable_pages--;
+                    if(node_from->isolated_movable_pages)
+                        node_from->isolated_movable_pages--;
                     /* decrease isolated movable page count because it is unmapped  */
+
+                    trace_printk("mig phase(something_isomg), node_from state update (pfn:%lu, iso:%lu, used:%lu) \n", 
+                            node_from->pb_head_pfn,
+                            node_from->isolated_movable_pages, 
+                            node_from->used_movable_page);
+
                     if(!node_from->isolated_movable_pages){
                         /* if page block handled all isolated migrate pages
                          * make it back to original page block state */
                         level_cur = calc_pbutil_level(node_from->used_movable_page);
+                        if(level_pre != level_cur){
+                            pbutil_list_pre = &zone->son_pbutil_list[level_pre];
+                            pbutil_list_cur = &zone->son_pbutil_list[level_cur];
 
-                        pbutil_list_pre = &zone->son_pbutil_list[level_pre];
-                        list_del(&node_from->pbutil_level);
-                        pbutil_list_pre->cur_count--;
+                            list_del(&node_from->pbutil_level);
+                            pbutil_list_pre->cur_count--;
 
-                        pbutil_list_cur = &zone->son_pbutil_list[level_cur];
-                        list_add_tail(&node_from->pbutil_level,&pbutil_list_cur->pbutil_list_head);
-                        pbutil_list_cur->cur_count++;
+                            list_add_tail(&node_from->pbutil_level,&pbutil_list_cur->pbutil_list_head);
+                            pbutil_list_cur->cur_count++;
 
-                        node_from->level = level_cur;
-                        trace_printk("mig phase(something), page_from's node found update state changed(moved from isolated list) \n");
+                            node_from->level = level_cur;
+
+                            trace_printk("mig phase(something_isomg), move_pb, used:%lu/iso:%lu(%10s:%d -> %10s:%d)\n", 
+                                    node_from->used_movable_page,
+                                    node_from->isolated_movable_pages,
+                                    pbstat_names[level_pre], 
+                                    pbutil_list_pre->cur_count, 
+                                    pbstat_names[level_cur], 
+                                    pbutil_list_cur->cur_count); 
+                        }else{
+                            trace_printk("mig phase(something_isomg), error, page_from's pb isolated count is zero but state not changed %lu \n", 
+                                    node_from->isolated_movable_pages);
+                        }
                     }
-                    trace_printk("mig phase(something), page_from's node found update success(still in isolated list) \n");
+
                 }else{
                     /* if page block's state is not SON_PB_ISOMG it is normal page migration  */
                     level_cur = calc_pbutil_level(node_from->used_movable_page);
                     if(level_cur != level_pre){
 
                         pbutil_list_pre = &zone->son_pbutil_list[level_pre];
+                        pbutil_list_cur = &zone->son_pbutil_list[level_cur];
+
                         list_del(&node_from->pbutil_level);
                         pbutil_list_pre->cur_count--;
 
-                        pbutil_list_cur = &zone->son_pbutil_list[level_cur];
                         list_add_tail(&node_from->pbutil_level,&pbutil_list_cur->pbutil_list_head);
                         pbutil_list_cur->cur_count++;
 
                         node_from->level = level_cur;
-                        trace_printk("mig phase(something), page_from's node found update state changed \n");
+
+                        trace_printk("mig phase(something_nor), node_from move_pb, used:%lu/iso:%lu(%10s:%d -> %10s:%d)\n", 
+                                    node_from->used_movable_page,
+                                    node_from->isolated_movable_pages,
+                                    pbstat_names[level_pre], 
+                                    pbutil_list_pre->cur_count, 
+                                    pbstat_names[level_cur], 
+                                    pbutil_list_cur->cur_count);
                     }
-                    trace_printk("mig phase(something), page_from's node found update success \n");
+
                 }
-                
+              
                 /* Step 2. update state of page_to from freelist */ 
 
-                /* Step 2-1. search node of page_to from freelist  */
+                /* Step 2-1. search node of page_to from freelist */
                 node_to = son_pbutil_node_lookup(pbutil_tree, pfn_startpb_to);
                 if(!node_to){
-                    /* if node is not found, then allocate new node  */
-                    trace_printk("mig phase(something), page_to's node not found alloc new\n");
+                    /* if node is not found, then allocate new node */
+                    trace_printk("mig phase(something_new), page_to's node not found alloc new\n");
                     node_to = son_pbutil_node_alloc();
                     if(node_to){
                         node_to->pb_head_pfn = pfn_startpb_to;
                         /* update pbutil_node state which will be migrated to */
+                        
                         bitmap_set(node_to->pbutil_movable_bitmap, 
                                 pfn_to - pfn_startpb_to, 1);
                         node_to->used_movable_page++;
@@ -1514,20 +1619,21 @@ unlock_nothing:
                         pbutil_list_cur = &zone->son_pbutil_list[level_cur];
                         list_add_tail(&node_to->pbutil_level,&pbutil_list_cur->pbutil_list_head);
 
-                        trace_printk("mig phase(something), page_to's node alloc new success \n");                  
+                        trace_printk("mig phase(something), page_to's node_to alloc new success inserted to %10s \n",
+                                pbstat_names[level_cur]);
                     }else{
-                        trace_printk("mig phase(something), page_to's node alloc new failed \n");                  
+                        trace_printk("mig phase(something), error, page_to's node_to alloc new failed \n");                  
                         goto unlock_something;
                     }
                 }else{
-                    trace_printk("mig phase(something), page_to's node found update \n");
-
-                    /* Step 2-2. set corresponding bitmap to page in page_to  */
-                    bitmap_set(node_to->pbutil_movable_bitmap, 
-                            pfn_to - pfn_startpb_to, 1);
-                    /* Step 1-3. decrease used movable page count in node 
-                     * because page_from is unmapped */
-                    node_to->used_movable_page++;
+                    if(node_to->used_movable_page <= 512){
+                        /* Step 2-2. set corresponding bitmap to page in page_to  */
+                        bitmap_set(node_to->pbutil_movable_bitmap, 
+                                pfn_to - pfn_startpb_to, 1);
+                        /* Step 1-3. decrease used movable page count in node 
+                         * because page_from is unmapped */
+                        node_to->used_movable_page++;
+                    }
                     level_pre = node_to->level;
 
                     /* if page block's state which contains page_from is SON_PB_ISOFR 
@@ -1538,46 +1644,70 @@ unlock_nothing:
                          * need to be updated */
                         node_to->isolated_movable_pages--;
                         /* decrease isolated movable page count because it is unmapped  */
+
+                        trace_printk("mig phase(something_isofr), node_to state update (pfn:%lu, iso:%lu, used:%lu) \n", 
+                                node_to->pb_head_pfn,
+                                node_to->isolated_movable_pages, 
+                                node_to->used_movable_page);
+
                         if(!node_to->isolated_movable_pages){
                             /* if page block handled all isolated migrate pages
                              * make it back to original page block state */
                             level_cur = calc_pbutil_level(node_to->used_movable_page);
+                            if(level_pre != level_cur){
+                                pbutil_list_pre = &zone->son_pbutil_list[level_pre];
+                                pbutil_list_cur = &zone->son_pbutil_list[level_cur];
 
-                            pbutil_list_pre = &zone->son_pbutil_list[level_pre];
-                            list_del(&node_to->pbutil_level);
-                            pbutil_list_pre->cur_count--;
+                                list_del(&node_to->pbutil_level);
+                                pbutil_list_pre->cur_count--;
 
-                            pbutil_list_cur = &zone->son_pbutil_list[level_cur];
-                            list_add_tail(&node_to->pbutil_level,&pbutil_list_cur->pbutil_list_head);
-                            pbutil_list_cur->cur_count++;
+                                list_add_tail(&node_to->pbutil_level,&pbutil_list_cur->pbutil_list_head);
+                                pbutil_list_cur->cur_count++;
 
-                            node_to->level = level_cur;
-                            trace_printk("mig phase(something), page_to's node found update state changed(moved from isolated list) \n");
+                                node_to->level = level_cur;
+                                trace_printk("mig phase(something_isofr), move_pb, used:%lu/iso:%lu(%10s:%d -> %10s:%d)\n", 
+                                        node_to->used_movable_page,
+                                        node_to->isolated_movable_pages,
+                                        pbstat_names[level_pre], 
+                                        pbutil_list_pre->cur_count, 
+                                        pbstat_names[level_cur], 
+                                        pbutil_list_cur->cur_count); 
+
+                            }else{
+                                trace_printk("mig phase(something_isofr), error, page_from's pb isolated count is zero but state not changed %lu \n", 
+                                        node_to->isolated_movable_pages);
+                            }
                         }
-                        trace_printk("mig phase(something), page_to's node found update success(still in isolated list) \n");
                     }else{
                         /* if page block's state is not SON_PB_ISOMG it is normal page migration  */
                         level_cur = calc_pbutil_level(node_to->used_movable_page);
                         if(level_cur != level_pre){
 
                             pbutil_list_pre = &zone->son_pbutil_list[level_pre];
+                            pbutil_list_cur = &zone->son_pbutil_list[level_cur];
+
                             list_del(&node_to->pbutil_level);
                             pbutil_list_pre->cur_count--;
 
-                            pbutil_list_cur = &zone->son_pbutil_list[level_cur];
                             list_add_tail(&node_to->pbutil_level,&pbutil_list_cur->pbutil_list_head);
                             pbutil_list_cur->cur_count++;
 
                             node_to->level = level_cur;
-                            trace_printk("mig phase(something), page_to's node found update state changed \n");
+
+                            trace_printk("mig phase(something_nor), node_to move_pb, used:%lu/iso:%lu(%10s:%d -> %10s:%d)\n", 
+                                    node_to->used_movable_page,
+                                    node_to->isolated_movable_pages,
+                                    pbstat_names[level_pre], 
+                                    pbutil_list_pre->cur_count, 
+                                    pbstat_names[level_cur], 
+                                    pbutil_list_cur->cur_count);
                         }
-                        trace_printk("mig phase(something), page_to's node found update success \n");
                     }
                 }
+
 unlock_something:
                 spin_unlock(&zone->pbutil_list_lock);
             }
-
         }
     } else {
         if (rc != -EAGAIN) {
@@ -1587,13 +1717,68 @@ unlock_something:
             }
 
             lock_page(page);
-			if (PageMovable(page))
-				putback_movable_page(page);
-			else
-				__ClearPageIsolated(page);
-			unlock_page(page);
-			put_page(page);
-		}
+            if (PageMovable(page))
+                putback_movable_page(page);
+            else
+                __ClearPageIsolated(page);
+            unlock_page(page);
+            put_page(page);
+
+            if(reason == MR_COMPACTION){
+                trace_printk("mig phase(failed putback), error, putback \n");
+
+                page_from = page;
+                zone = page_zone(page_from);
+                pgdat = zone->zone_pgdat;       
+                pbutil_tree = &pgdat->son_pbutil_tree;
+                pfn_from = page_to_pfn(page_from);
+                pfn_startpb_from = block_start_pfn(pfn_from, pageblock_order);
+
+                spin_lock(&zone->pbutil_list_lock);
+
+                node_from = son_pbutil_node_lookup(pbutil_tree, pfn_startpb_from);
+                if(node_from){
+                    level_pre = node_from->level;
+                    if(level_pre == SON_PB_ISOMG){ 
+                        node_from->isolated_movable_pages--;
+
+                        if(!node_from->isolated_movable_pages){
+                            /* recalculate level and add to new list */
+                            level_cur = calc_pbutil_level(node_from->used_movable_page);
+
+                            if(level_pre != level_cur){
+                                pbutil_list_pre = &zone->son_pbutil_list[level_pre];
+                                pbutil_list_cur = &zone->son_pbutil_list[level_cur];
+
+                                /* remove node from isomg list  */
+                                list_del(&node_from->pbutil_level);
+                                pbutil_list_pre->cur_count--;
+
+                                list_add_tail(&node_from->pbutil_level,&pbutil_list_cur->pbutil_list_head);
+                                pbutil_list_cur->cur_count++;
+
+                                node_from->level = level_cur;
+                                trace_printk("mig phase(failed putback), node_from move_pb, used:%lu/iso:%lu(%10s:%d -> %10s:%d)\n", 
+                                        node_from->used_movable_page,
+                                        node_from->isolated_movable_pages,                                   
+                                        pbstat_names[level_pre], 
+                                        pbutil_list_pre->cur_count, 
+                                        pbstat_names[level_cur], 
+                                        pbutil_list_cur->cur_count);
+                            }else{
+                                trace_printk("mig phase(failed putback), error, page_from's pb isolated count is zero but state not changed %lu \n", 
+                                        node_from->isolated_movable_pages);
+
+                            }
+                        }
+                    }
+                }else{
+                    trace_printk("mig phase(failed putback), error, node not found \n");
+                }
+                spin_unlock(&zone->pbutil_list_lock);
+
+            }
+        }
 put_new:
 		if (put_new_page)
 			put_new_page(newpage, private);
@@ -1897,17 +2082,20 @@ int son_migrate_pages(struct list_head *from, new_page_t get_new_page,
 
 			switch(rc) {
 			case -ENOMEM:
+                trace_printk("son_migrate ENOMEM !! \n");
 				nr_failed++;
 				goto out;
 			case -EAGAIN:
+                trace_printk("son_migrate EAGAIN !! - pfn:%lu \n",page_to_pfn(page));
+
                 // again 이면 list 에서 삭제 안함
 				retry++;
 				break;
 			case MIGRATEPAGE_SUCCESS:
+                trace_printk("son_migrate success !! -pfn:%lu \n",page_to_pfn(page));
+
                 // again 이 아니면 list 에서 삭제
 				nr_succeeded++;
-                if(reason == MR_COMPACTION)                
-                    trace_printk("compact success\n");
 
 #ifdef CONFIG_SON 
 #if SON_REFSCAND_ENABLE
@@ -1925,6 +2113,7 @@ int son_migrate_pages(struct list_head *from, new_page_t get_new_page,
 #endif
 				break;
 			default:
+                trace_printk("son_migrate failed !!");
 				/*
 				 * Permanent failure (-EBUSY, -ENOSYS, etc.):
 				 * unlike -EAGAIN case, the failed page is

@@ -117,14 +117,21 @@ static unsigned long release_freepages(struct list_head *freelist)
 
 #ifdef CONFIG_SON
 #if SON_PBSTAT_ENABLE
-static void son_release_freepages(struct list_head *freelist)
+static void son_release_freepages(struct list_head *freelist, struct zone *zone)
 {
 	struct page *page, *next;
-
+    /* for debugging */
+    int count =0;
 	list_for_each_entry_safe(page, next, freelist, lru) {
 		list_del(&page->lru);
 		__free_page(page);
+        count++;
 	}
+    if(zone && !zone->son_pbutil_list[SON_PB_ISOFR].cur_count)
+        trace_printk("putback isofr phase,all isofr pb is putbacked \n");
+    else
+        trace_printk("putback isofr phase,isofr page left ...why? \n");     
+    trace_printk("putbacked free pages count: %d \n",count);
 }
 
 #endif
@@ -695,11 +702,13 @@ static unsigned long son_isolate_freepages_block(struct son_compact_control *cc,
 				bool strict)
 {
 	int nr_scanned = 0, total_isolated = 0;
-	struct page *cursor, *valid_page = NULL;
+	struct page *cursor, *valid_page = NULL, *head_page = NULL;
 	unsigned long flags = 0;
 	bool locked = false;
 	unsigned long blockpfn = *start_pfn;
+    unsigned long block_start_pfn =0;
 	unsigned int order;
+    bool head = true;
 
 	cursor = pfn_to_page(blockpfn);
 
@@ -778,10 +787,26 @@ static unsigned long son_isolate_freepages_block(struct son_compact_control *cc,
 			break;
 		set_page_private(page, order);
 
+#if 0
+        if(head){
+            head = false;
+            page->mgtype = SON_PB_ISOLATE;
+        }
+#endif  
+#if 0
+        block_start_pfn = pageblock_start_pfn(page_to_pfn(page));
+        head_page = page_to_pfn(block_start_pfn);
+        head_page
+#endif
+        page->mgtype = SON_PB_ISOLATE;
+
+
 		total_isolated += isolated;
 		cc->nr_freepages += isolated;
 		list_add_tail(&page->lru, freelist);
-        page->mgtype = SON_PB_ISOLATE;
+        /* if current page is head page of page block mark current 
+         * page block's migrate state to SON_PB_ISOLATE  */
+
 		if (!strict && cc->nr_migratepages <= cc->nr_freepages) {
 			blockpfn += isolated;
 			break;
@@ -1443,6 +1468,8 @@ isolate_fail:
 				spin_unlock_irqrestore(zone_lru_lock(zone), flags);
 				locked = false;
 			}
+            trace_printk("before putback,migrate failed  !!\n");
+
 			son_putback_movable_pages(&cc->migratepages);
 			cc->nr_migratepages = 0;
 			nr_isolated = 0;
@@ -1688,6 +1715,7 @@ static void isolate_freepages(struct compact_control *cc)
 
 #ifdef CONFIG_SON
 #if SON_PBSTAT_ENABLE 
+
 static void son_isolate_freepages(struct son_compact_control *cc)
 {
 	struct zone *zone = cc->zone;
@@ -1696,69 +1724,90 @@ static void son_isolate_freepages(struct son_compact_control *cc)
 	unsigned long block_start_pfn;	/* start of current pageblock */
 	unsigned long isolate_start_pfn; /* exact pfn we start at */
 	unsigned long block_end_pfn;	/* end of current pageblock */
-    unsigned long nr_pb_isolated;
+    unsigned long nr_pb_isolated = 0;
     unsigned long nr_freepages_pre=0;
+    unsigned long nr_freepages_temp = 0;
     int level;
-    pbutil_node_t *pbutil_node = NULL;
-    pbutil_list_t *pbutil_list = NULL, *pbutil_list_isofr=NULL;
+    pbutil_node_t *pbutil_node = NULL, *pbutil_node_temp = NULL;
+    pbutil_list_t *pbutil_list = NULL, *pbutil_list_isofr = NULL;
 
     pbutil_list_isofr = &zone->son_pbutil_list[SON_PB_ISOFR];
+
     for(level = SON_PB_SYSFS_MAX ; level >= cc->cur_free_level; level--){
+
         pbutil_list = &zone->son_pbutil_list[level];
-        nr_pb_isolated=0;
 
+        /* get pbutil lock to get corresponding node */
+        list_for_each_entry_safe(pbutil_node, pbutil_node_temp, 
+                &pbutil_list->pbutil_list_head, pbutil_level) {
 
-        while(pbutil_list->cur_count){
-            pbutil_node = NULL;
-
+            /* check if it needs to be rescheduled in SON_COMP_PBBATCH_FRE unit */
             if(!(++nr_pb_isolated % SON_COMP_PBBATCH_FRE) 
                     && son_compact_should_abort(cc))
                 goto out;
 
-            spin_lock(&zone->pbutil_list_lock);
-
-            list_first_entry_or_null(&pbutil_list->pbutil_list_head,
-                    pbutil_node_t,pbutil_level);
-
+            /* skip to next page block if node does not exist */
             if(!pbutil_node){
                 trace_printk("isolate free phase,entry node not found \n");
-                spin_unlock(&zone->pbutil_list_lock);
                 break;
             }
 
+            /* get page from node's head page pfn  */
             page = pfn_to_page(pbutil_node->pb_head_pfn);
             if(!page){
                 trace_printk("isolate free phase,pfn convert error \n");
-                spin_unlock(&zone->pbutil_list_lock);
                 continue;
             }
 
             /* Check the block is suitable for migration */
-            if (!son_suitable_migration_target(page))
-                continue;
-
-            list_del(&pbutil_node->pbutil_level);
-            pbutil_list->cur_count--;
-
-            list_add_tail(&pbutil_node->pbutil_level,&pbutil_list_isofr->pbutil_list_head);
-            pbutil_list_isofr->cur_count++;
-            pbutil_node->level = SON_PB_ISOFR;
-
+            if (!son_suitable_migration_target(page)){
+                trace_printk("all page block is empty! it is not suitable to isolate to freepage list \n");
+                break;
+            }
+            /* set page block start-end pfn based on node's head pfn info */
             block_start_pfn = pbutil_node->pb_head_pfn;
             block_end_pfn = block_start_pfn + pageblock_nr_pages;
             isolate_start_pfn = block_start_pfn;
 
-            /* Found a block suitable for isolating free pages from. */
+            /* reset isolated page count to previous loop's migrated page count */
             nr_freepages_pre = cc->nr_freepages;
-            spin_unlock(&zone->pbutil_list_lock);
-
+            /* execute isolating page step in current page block 
+             * if fails nr_freepages_temp will become 0 */
             son_isolate_freepages_block(cc, &isolate_start_pfn, block_end_pfn,
-                    freelist, false);
-            if(nr_freepages_pre != cc->nr_freepages){
-                cc->nr_freedpb++;
-                spin_lock(&zone->pbutil_list_lock);
-                pbutil_node->isolated_movable_pages=cc->nr_freepages - nr_freepages_pre;               
+                    freelist, false); 
+            nr_freepages_temp = cc->nr_freepages - nr_freepages_pre;
+
+            trace_printk("isolate free-count,used:%lu,isolated_pages_curpb:%lu(total_isomg:%lu,total_isofr:%lu)\n", 
+                    pbutil_node->used_movable_page,
+                    nr_freepages_temp,
+                    cc->nr_migratepages,
+                    cc->nr_freepages);             
+
+            /* if nr_freepages_temp is not 0, some pages within current 
+             * page block is migrated. so, update node's migrated count 
+             * and move node to migrate isolated list*/
+            if(nr_freepages_temp){
+
+                cc->nr_isolated_freepb++;
+                spin_lock(&zone->pbutil_list_lock);                
+                pbutil_node->isolated_movable_pages=nr_freepages_temp; 
+
+                list_del(&pbutil_node->pbutil_level);
+                pbutil_list->cur_count--;
+
+                list_add_tail(&pbutil_node->pbutil_level,&pbutil_list_isofr->pbutil_list_head);
+                pbutil_list_isofr->cur_count++;
+
+                pbutil_node->level = SON_PB_ISOFR;
+
                 spin_unlock(&zone->pbutil_list_lock);
+                trace_printk("isolate free-move_pb used:%lu/iso:%lu (%10s:%d -> %10s:%d)\n", 
+                        pbutil_node->used_movable_page,
+                        pbutil_node->isolated_movable_pages,
+                        pbstat_names[level], 
+                        pbutil_list->cur_count, 
+                        pbstat_names[SON_PB_ISOFR], 
+                        pbutil_list_isofr->cur_count);                 
             }
 
             /*
@@ -1767,9 +1816,11 @@ static void son_isolate_freepages(struct son_compact_control *cc)
              */
             if ((cc->nr_freepages >= cc->nr_migratepages)
                     || cc->contended) {
-                break;
+                trace_printk("free page isolated enough or contended! \n");
+                goto out;
             } else if (isolate_start_pfn < block_end_pfn) {
-                break;
+                trace_printk("free page isolation stopped ! \n");
+                goto out;
             }
         }
 	}
@@ -1809,6 +1860,7 @@ static struct page *compaction_alloc(struct page *migratepage,
 
 	return freepage;
 }
+
 #ifdef CONFIG_SON
 #if SON_PBSTAT_ENABLE
 static struct page *son_compaction_alloc(struct page *migratepage,
@@ -1825,7 +1877,11 @@ static struct page *son_compaction_alloc(struct page *migratepage,
 	if (list_empty(&cc->freepages)) {
 		if (!cc->contended)
 			son_isolate_freepages(cc);
-
+            /* 
+             * TODO 
+             *  - original 버전과 비교하여 원래 버전에서 contended 가 언제
+             *    reset되는지 확인
+             */
 		if (list_empty(&cc->freepages))
 			return NULL;
 	}
@@ -1922,8 +1978,9 @@ static isolate_migrate_t isolate_migratepages(struct zone *zone,
 		 * need to schedule, or even abort async compaction.
 		 */
 		if (!(low_pfn % (SWAP_CLUSTER_MAX * pageblock_nr_pages))
-						&& compact_should_abort(cc))
+						&& compact_should_abort(cc)){
 			break;
+        }
 
 		page = pageblock_pfn_to_page(block_start_pfn, block_end_pfn,
 									zone);
@@ -1958,8 +2015,9 @@ static isolate_migrate_t isolate_migratepages(struct zone *zone,
         }
 #endif
 
-		if (!low_pfn || cc->contended)
+		if (!low_pfn || cc->contended){
 			return ISOLATE_ABORT;
+        }
 
 		/*
 		 * Either we isolated something and proceed with migration. Or
@@ -1978,11 +2036,11 @@ static isolate_migrate_t isolate_migratepages(struct zone *zone,
 #ifdef CONFIG_SON
 #if SON_PBSTAT_ENABLE 
 
+/* new version of migrate page isolation function */
 static isolate_migrate_t son_isolate_migratepages(struct zone *zone,
 					struct son_compact_control *cc)
 {
-    /* new version of migrate page isolation function  */
-    pbutil_node_t *pbutil_node = NULL;
+    pbutil_node_t *pbutil_node = NULL, *pbutil_node_temp = NULL;
     pbutil_list_t *pbutil_list = NULL, *pbutil_list_isomg=NULL;
 	struct page *page = NULL;       
     unsigned long nr_pb_isolated = 0;
@@ -1990,74 +2048,109 @@ static isolate_migrate_t son_isolate_migratepages(struct zone *zone,
 	unsigned long block_end_pfn;
 	unsigned long low_pfn = 0;    
     unsigned long nr_migratepages_pre=0;
+    unsigned long nr_migratepages_temp = 0;
     int level;
 	const isolate_mode_t isolate_mode =
 		(sysctl_compact_unevictable_allowed ? ISOLATE_UNEVICTABLE : 0) |
 		(cc->mode != MIGRATE_SYNC ? ISOLATE_ASYNC_MIGRATE : 0);
-   
+  
     pbutil_list_isomg = &zone->son_pbutil_list[SON_PB_ISOMG];
-    for(level = SON_PB_SYSFS_MIN ; level <= cc->cur_mig_level; level++){        
+    /* set migration threshold level  */
+    for(level = SON_PB_SYSFS_MIN ; level <= cc->cur_mig_level; level++){
+
         pbutil_list = &zone->son_pbutil_list[level];
-       
-        while(pbutil_list->cur_count){
-            pbutil_node = NULL;
 
+        /* get pbutil lock to get corresponding node */
+        list_for_each_entry_safe(pbutil_node, pbutil_node_temp, 
+                &pbutil_list->pbutil_list_head, pbutil_level) {
+
+            /* check if it needs to be rescheduled in SON_COMP_PBBATCH_MIG unit */
             if(!(++nr_pb_isolated % SON_COMP_PBBATCH_MIG) 
-                    && son_compact_should_abort(cc))
+                    && son_compact_should_abort(cc)){
                 goto out;
-
-            spin_lock(&zone->pbutil_list_lock);
-
-            list_first_entry_or_null(&pbutil_list->pbutil_list_head,
-                    pbutil_node_t,pbutil_level);
-            
-            if(!pbutil_node){
-                trace_printk("isolate mig phase,entry node not found \n");
-                spin_unlock(&zone->pbutil_list_lock);
-                break;
             }
-
-            page = pfn_to_page(pbutil_node->pb_head_pfn);
-            if(!page){
-                trace_printk("isolate mig phase,pfn convert error \n");
-                spin_unlock(&zone->pbutil_list_lock);
+            /* skip to next page block if node does not exist */
+            if(!pbutil_node){
+                trace_printk("isolate mig phase,entry node not found, level : %d, count : %d \n" ,level, pbutil_list->cur_count);
                 continue;
             }
 
-            list_del(&pbutil_node->pbutil_level);
-            pbutil_list->cur_count--;
+            /* get page from node's head page pfn  */
+            page = pfn_to_page(pbutil_node->pb_head_pfn);
+            if(!page){
+                trace_printk("isolate mig phase,pfn convert error \n");
+                continue;
+            }
 
-            list_add_tail(&pbutil_node->pbutil_level,&pbutil_list_isomg->pbutil_list_head);
-            pbutil_list_isomg->cur_count++;
-            pbutil_node->level = SON_PB_ISOMG;
-
+            /* set page block start-end pfn based on node's head pfn info */
             block_start_pfn = pbutil_node->pb_head_pfn;
             if (block_start_pfn < zone->zone_start_pfn)
                 block_start_pfn = zone->zone_start_pfn;
             block_end_pfn = block_start_pfn + pageblock_nr_pages;
-#if 0
-            if (cc->mode == MIGRATE_ASYNC 
-                    && !migrate_async_suitable(get_pageblock_migratetype(page)))
-                continue;
-#endif
-            nr_migratepages_pre = cc->nr_migratepages;
-            spin_unlock(&zone->pbutil_list_lock);
 
+            /* reset isolated page count to previous loop's migrated page count */
+            nr_migratepages_pre = cc->nr_migratepages;
+            /* execute isolating page step in current page block 
+             * if fails low_pfn will become 0, if success low_pfn will be 
+             * the lastly migrated page frame number */
             low_pfn = son_isolate_migratepages_block(cc, block_start_pfn,
-                    block_end_pfn, isolate_mode);
-            if(cc->nr_migratepages != nr_migratepages_pre){                
-                cc->nr_migratedpb++;
+                    block_end_pfn, isolate_mode); 
+            nr_migratepages_temp = cc->nr_migratepages - nr_migratepages_pre;
+
+            trace_printk("isolate migr-count,used:%lu,isolated_pages_curpb:%lu(tm:%lu)\n", 
+                    pbutil_node->used_movable_page,
+                    nr_migratepages_temp,
+                    cc->nr_migratepages);             
+
+            /* if nr_migratepages_temp is not 0, some pages within current 
+             * page block is migrated. so, update node's migrated count 
+             * and move node to migrate isolated list*/
+            if(nr_migratepages_temp){
+
+                cc->nr_isolated_migratepb++;
+                /* get pbutil lock to update corresponding node's state */
                 spin_lock(&zone->pbutil_list_lock);
-                pbutil_node->isolated_movable_pages=cc->nr_migratepages - nr_migratepages_pre;
+                /* update node's state */
+                pbutil_node->isolated_movable_pages = nr_migratepages_temp;
+                /* some of pages in current page block is migrated
+                 * so move node to migrated isolate list  */
+                list_del(&pbutil_node->pbutil_level);
+                pbutil_list->cur_count--;
+
+                list_add_tail(&pbutil_node->pbutil_level,&pbutil_list_isomg->pbutil_list_head);
+                pbutil_list_isomg->cur_count++;
+                /* update current node's level state to isolated state  */
+                pbutil_node->level = SON_PB_ISOMG;
+                /* release pbutil lock */
                 spin_unlock(&zone->pbutil_list_lock);
+                trace_printk("isolate migr-move_pb used:%lu/iso:%lu (%10s:%d -> %10s:%d)\n", 
+
+                        pbutil_node->used_movable_page,
+                        pbutil_node->isolated_movable_pages,
+                        pbstat_names[level], 
+                        pbutil_list->cur_count, 
+                        pbstat_names[SON_PB_ISOMG], 
+                        pbutil_list_isomg->cur_count); 
             }
 
+            /* TODO  
+             * - 해당 page block 에서 migrate 가 되지 않았을 때, 처리로 수정 필요.
+             *   지금은 그냥 first entry가져와서 migrate됬으면 옮기는 구조인데, 
+             *   migrate 불가능 하면 hint 남겨 놓고, 결국 그 hint 개수만큼 남으면 
+             *   list의 cur_count 가 0이 아니더라도 종료되도록 수정 필요*/
             if (!low_pfn || cc->contended)
                 return ISOLATE_ABORT;
+            /* TODO 
+             *  - 어떤 상태이던 하나의 page block 단위로 migrate 하도록 
+             *    하려면 break. 
+             *  - 혹시 BLUE 의 경우 몇개 없으므로 한번에 migrate 해도 
+             *    되지 않을까?...
+             */            
+            goto out;
         }
     }
 out:
-
+    /* if pages are migrated isolated process is succedded. */
 	return cc->nr_migratepages ? ISOLATE_SUCCESS : ISOLATE_NONE;
 }
 
@@ -2153,7 +2246,7 @@ static enum compact_result son_compaction_suitable(struct zone *zone,
         pbutil_list = &zone->son_pbutil_list[level];
         if(pbutil_list->cur_count){
             ret = COMPACT_CONTINUE;
-            break;            
+            goto out;
         }
     }
 #if 0
@@ -2164,7 +2257,9 @@ static enum compact_result son_compaction_suitable(struct zone *zone,
 			ret = COMPACT_NOT_SUITABLE_ZONE;
 
 	}
-#endif
+#endif 
+
+out:
 	return ret;
 }
 #endif
@@ -2326,101 +2421,6 @@ bool compaction_zonelist_suitable(struct alloc_context *ac, int order,
 
 	return false;
 }
-#ifdef CONFIG_SON
-#if SON_PBSTAT_ENABLE
-static enum compact_result son_compact_zone(struct zone *zone, struct son_compact_control *cc)
-{
-	enum compact_result ret;
-
-	ret = son_compaction_suitable(zone,cc);
-	/* Compaction is likely to fail */
-#if 0
-	if (ret == COMPACT_SUCCESS || ret == COMPACT_SKIPPED)
-		return ret;
-#endif
-	if (ret == COMPACT_SUCCESS)
-		return ret;
-
-    migrate_prep_local();
-
-	while ((ret = son_compact_finished(zone, cc)) ==
-						COMPACT_CONTINUE) {
-		int err;
-        /* target level 이 비게 될 때 까지 수행하며 migrate 해줄 page 들이 속한 
-         * page block 을 pb util list 에서 isolate pbutil list 로 분리*/
-		switch (son_isolate_migratepages(zone, cc)) {
-		case ISOLATE_ABORT:
-			ret = COMPACT_CONTENDED;
-			son_putback_movable_pages(&cc->migratepages);
-			cc->nr_migratepages = 0;
-			goto out;
-		case ISOLATE_NONE:
-			/*
-			 * We haven't isolated and migrated anything, but
-			 * there might still be unflushed migrations from
-			 * previous cc->order aligned block.
-			 */
-//			goto check_drain;
-            continue;			
-		case ISOLATE_SUCCESS:
-			;
-		}
-        /* update page block utilizatino state in radix tree (free->migrate)*/ 
-        /* 원래 page와 새로운 page의 각각 node 삳태 update 및 새로운 node 는  
-         * 그에 해당하는 pbutil list에 추가 */
-		err = son_migrate_pages(&cc->migratepages, son_compaction_alloc,
-				son_compaction_free, (unsigned long)cc, cc->mode,
-				MR_COMPACTION);
-
-		/* All pages were either migrated or will be released */
-		cc->nr_migratepages = 0;
-		if (err) {
-			putback_movable_pages(&cc->migratepages);
-		}
-
-		/*
-		 * Has the migration scanner moved away from the previous
-		 * cc->order aligned block where we migrated from? If yes,
-		 * flush the pages that were freed, so that they can merge and
-		 * compact_finished() can detect immediately if allocation
-		 * would succeed.
-		 */
-        /*FIXME*/
-
-#if 0
-
-check_drain:
-		if (cc->order > 0 && cc->last_migrated_pfn) {
-			int cpu;
-			unsigned long current_block_start =
-				block_start_pfn(cc->migrate_pfn, cc->order);
-
-			if (cc->last_migrated_pfn < current_block_start) {
-				cpu = get_cpu();
-				lru_add_drain_cpu(cpu);
-				drain_local_pages(zone);
-				put_cpu();
-				/* No more flushing until we migrate again */
-				cc->last_migrated_pfn = 0;
-			}
-		}
-#endif
-	}
-
-out: 
-	/*
-	 * Release free pages and update where the free scanner should restart,
-	 * so we don't leave any returned pages behind in the next attempt.
-	 */
-	if (cc->nr_freepages > 0) {
-	    son_release_freepages(&cc->freepages);
-		cc->nr_freepages = 0;
-	}
-
-	return ret;
-}
-#endif
-#endif
 
 static enum compact_result compact_zone(struct zone *zone, struct compact_control *cc)
 {
@@ -2586,6 +2586,127 @@ out:
 
 	return ret;
 }
+
+#ifdef CONFIG_SON
+#if SON_PBSTAT_ENABLE
+static enum compact_result son_compact_zone(struct zone *zone, struct son_compact_control *cc)
+{
+	enum compact_result ret;
+    /*
+     * TODO 
+     *  - 현재 threshold value 까지 node 가 존재하는지 즉, BLUE 가 migrate threshold 라면 
+     *    BLUE level 에 node가 존재하는지 검사 => done !
+     *
+     *  - free page isolate  를 위한 현재 free page 상태는 고려되어 있지 않음 수정 
+     *
+     *  - CPU 상태 고려 필요
+     */
+    /* first check whether threshold value level's node present or not */
+	ret = son_compaction_suitable(zone,cc);
+	if (ret == COMPACT_SUCCESS){ 
+		return ret;
+    }
+
+    /* clear per-cpu lru and get lruvecs by lru_add_drain  */
+    migrate_prep_local();
+
+    /* check son_compaction_suitable and check whether signal is pended */
+	while ((ret = son_compact_finished(zone, cc)) ==
+						COMPACT_CONTINUE) {
+		int err;
+        /* migrate pages by page block unit until threshold 
+         * value for migration level's node becomes empty*/
+		switch (son_isolate_migratepages(zone, cc)) {
+		case ISOLATE_ABORT:
+            trace_printk("isolate abort !!\n");            
+			ret = COMPACT_CONTENDED;
+			goto out;
+		case ISOLATE_NONE:
+            trace_printk("isolate nothing !!\n");            
+//			goto check_drain; 
+			/* 
+             * TODO 
+             * - check drain 과정고려하도록 수정되어야 함. 
+             */
+//            continue;			
+            goto out;            
+		case ISOLATE_SUCCESS:
+            trace_printk("isolate migrate pages success !!\n");            
+            son_isolate_freepages(cc);
+            goto out;
+			;
+		}
+
+        /* update page block utilization state in radix tree (free->migrate)*/ 
+		err = son_migrate_pages(&cc->migratepages, son_compaction_alloc,
+				son_compaction_free, (unsigned long)cc, cc->mode,
+				MR_COMPACTION);
+
+        if (err) {
+            if(err == -EAGAIN)
+                trace_printk("before putback,err_again,again  !!\n");
+            else
+                trace_printk("before putback,err,%d  !!\n",err);
+
+//            son_putback_movable_pages(&cc->migratepages);
+            cc->nr_migratepages = 0;
+            if(err == -ENOMEM){
+                ret = COMPACT_CONTENDED;
+                goto out;
+            }
+        }
+
+#if 0
+        /*
+         * TODO 
+         *  - drain pages 하는 구조도 뭔가 이유가 있을 것 같은데
+         *    분서갛여 여기도 필요하다면 넣기.
+check_drain:
+		if (cc->order > 0 && cc->last_migrated_pfn) {
+			int cpu;
+			unsigned long current_block_start =
+				block_start_pfn(cc->migrate_pfn, cc->order);
+
+			if (cc->last_migrated_pfn < current_block_start) {
+				cpu = get_cpu();
+				lru_add_drain_cpu(cpu);
+				drain_local_pages(zone);
+				put_cpu();
+				cc->last_migrated_pfn = 0;
+			}
+		}
+    */
+#endif
+	}
+
+out: 
+    trace_printk("left status 1, %10s :%d, %10s : %d , %10s : %d\n",
+                pbstat_names[SON_PB_ISOMG],
+                zone->son_pbutil_list[SON_PB_ISOMG].cur_count,
+                pbstat_names[SON_PB_ISOFR],
+                zone->son_pbutil_list[SON_PB_ISOFR].cur_count,
+                pbstat_names[cc->cur_mig_level],
+                zone->son_pbutil_list[cc->cur_mig_level].cur_count);
+#if 1
+    if(!list_empty(&cc->migratepages)){        
+        trace_printk("before putback,I must putback isolated mig pages !!\n");
+        son_putback_movable_pages(&cc->migratepages);
+        cc->nr_migratepages = 0;
+        goto out;
+    }
+#endif
+#if 0   
+    if(!list_empty(&cc->freepages)){
+        trace_printk("before putback,I must putback isolated fre pages !!\n");
+//        son_release_freepages(&cc->freepages, cc->zone);
+		cc->nr_freepages = 0;
+	}
+#endif
+	return ret;
+}
+#endif
+#endif
+
 
 static enum compact_result compact_zone_order(struct zone *zone, int order,
 		gfp_t gfp_mask, enum compact_priority prio,
@@ -2766,8 +2887,8 @@ static void son_compact_node(int nid)
 
 		cc.nr_freepages = 0;
 		cc.nr_migratepages = 0;
-        cc.nr_migratedpb = 0;
-        cc.nr_freedpb = 0;
+        cc.nr_isolated_migratepb = 0;
+        cc.nr_isolated_freepb = 0;
         cc.nr_clearedpb = 0;
         cc.cur_mig_level = atomic_read(&son_pbstat_comp_mig_level);
         cc.cur_free_level = atomic_read(&son_pbstat_comp_free_level);
@@ -2776,6 +2897,7 @@ static void son_compact_node(int nid)
 		INIT_LIST_HEAD(&cc.migratepages);
 
 		son_compact_zone(zone, &cc);
+
 	}
 }
 #endif
@@ -2795,10 +2917,10 @@ static void compact_nodes(void)
             son_compact_node(nid);
         else
             compact_node(nid);
-    }
 #else
-    compact_node(nid);
+        compact_node(nid);
 #endif
+    }
 #endif
 }
 

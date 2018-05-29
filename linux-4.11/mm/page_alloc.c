@@ -1807,12 +1807,10 @@ static void prep_new_page(struct page *page, unsigned int order, gfp_t gfp_flags
 		clear_page_pfmemalloc(page); 
 
 #ifdef CONFIG_SON
-
 #if SON_REFSCAND_ENABLE 
 	bitmap_clear(page->page_util_ref_info.freq_bitmap, 0, FREQ_BITMAP_SIZE);    
     page->page_util_ref_info.page = NULL;   
 #endif
-
 #endif
 }
 
@@ -2742,7 +2740,8 @@ static struct page *rmqueue_pcplist(struct zone *preferred_zone,
 		zone_statistics(preferred_zone, zone);
 #ifdef CONFIG_SON
 #if SON_PBSTAT_ENABLE            
-        page->mgtype=migratetype;
+
+        page->mgtype = migratetype;
 #if 1
 //        if(migratetype == MIGRATE_MOVABLE)
         if(page->mgtype == SON_PB_MOVABLE)
@@ -2809,9 +2808,9 @@ struct page *rmqueue(struct zone *preferred_zone,
 #ifdef CONFIG_SON
 #if SON_PBSTAT_ENABLE            
     if(page){
-        page->mgtype=migratetype; 
+        page->mgtype = migratetype;
 #if 1
-//        if(migratetype == MIGRATE_MOVABLE)
+        //        if(migratetype == MIGRATE_MOVABLE)
         if(page->mgtype == SON_PB_MOVABLE)
             son_pbutil_update_alloc(page,order);
 #endif

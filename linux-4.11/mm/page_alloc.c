@@ -2560,7 +2560,7 @@ void free_hot_cold_page(struct page *page, bool cold)
 #if SON_PBSTAT_ENABLE
 #if 1
 //    if(migratetype == MIGRATE_MOVABLE)
-    if(page->mgtype == SON_PB_MOVABLE)
+    if(page->mgtype == SON_PB_MOVABLE || page->mgtype == SON_PB_BUDDY)
         son_pbutil_update_free(page,0);
 #endif
 #if 0

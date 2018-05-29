@@ -1127,13 +1127,13 @@ int son_pbutil_update_free(struct page *page, unsigned int order)
             trace_printk("pbutil_node is found in allocating process \n");                
 #endif
             pre_level = pbutil_node->level; 
-            if(pre_level == SON_PB_ISOMG || pre_level == SON_PB_ISOFR){                
+            if(pre_level == SON_PB_ISOMG || pre_level == SON_PB_ISOFR){
                
-                if(mgtype == SON_PB_ISOLATE){
-                    trace_printk("son_free, %10s,used:%lu,iso:%lu \n", 
-                            pbstat_names[pre_level],
+                if(mgtype == SON_PB_BUDDY){
+                    trace_printk("putback_isofr-used:%lu/iso:%lu (%10s)\n",
                             pbutil_node->used_movable_page,
-                            pbutil_node->isolated_movable_pages);
+                            pbutil_node->isolated_movable_pages,
+                            pbstat_names[pre_level]);
 
                     if(pbutil_node->isolated_movable_pages > 0){
                         pbutil_node->isolated_movable_pages--;
@@ -1223,7 +1223,18 @@ int son_pbutil_update_free(struct page *page, unsigned int order)
                 list_add_tail(&pbutil_node->pbutil_level,&pbutil_list->pbutil_list_head);
                 pbutil_list->cur_count++;
                 pbutil_node->level = cur_level;
-                //                spin_unlock(&zone->pbutil_list_lock);
+                //                spin_unlock(&zone->pbutil_list_lock); 
+                if(pre_level == SON_PB_ISOFR && mgtype == SON_PB_BUDDY){
+                    trace_printk("putback_isofr-used:%lu/iso:%lu (%10s:%d -> %10s:%d)\n", 
+                            pbutil_node->used_movable_page,
+                            pbutil_node->isolated_movable_pages,
+                            pbstat_names[pre_level], 
+                            pbutil_list_pre->cur_count, 
+                            pbstat_names[cur_level], 
+                            pbutil_list->cur_count);
+                }
+
+                
             }                      
 #if SON_DEBUG_ENABLE
             trace_printk("free found, success,pb(%lu ~ %lu),pg(%lu ~ %lu),order(%d/%lu/%lu),pbstat_names(%d) \n",pb_start_pfn, pb_end_pfn, pfn, pfn_end, order, pbutil_node->used_movable_page,pbutil_node->used_unmovable_page,cur_level);

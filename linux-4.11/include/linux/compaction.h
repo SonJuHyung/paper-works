@@ -1,6 +1,10 @@
 #ifndef _LINUX_COMPACTION_H
 #define _LINUX_COMPACTION_H
 
+#ifdef CONFIG_SON
+#include <son/son.h>
+#endif
+
 /*
  * Determines how hard direct compaction should try to succeed.
  * Lower value means higher priority, analogically to reclaim priority.
@@ -55,6 +59,11 @@ enum compact_result {
 	 * should now succeed
 	 */
 	COMPACT_SUCCESS,
+#ifdef CONFIG_SON
+#if SON_PBSTAT_ENABLE
+    SON_COMPACT_DONE,
+#endif
+#endif
 };
 
 struct alloc_context; /* in mm/internal.h */

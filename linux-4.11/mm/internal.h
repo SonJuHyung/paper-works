@@ -220,6 +220,7 @@ struct son_compact_control{
     unsigned long total_migrate_scanned; /* total migrated page count       init FIXME*/
     unsigned long total_free_scanned; /* total free scannned                init FIXME*/
     enum migrate_mode mode;		/* Async or sync migration mode             init */
+    bool migrate_scanner_end;
     bool direct_compaction;		/* False from kcompactd or /proc/...             TODO*/
     const gfp_t gfp_mask;		/* gfp mask of a direct compactor           init */
     const unsigned int alloc_flags;	/* alloc flags of a direct compactor */

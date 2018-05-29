@@ -228,6 +228,7 @@ char * const pbstat_names[SON_PB_MAX] = {
 char * const comp_mode_names[SON_COMPMODE_MAX] = {
 	 "Default",
 	 "Revised",
+	 "Default_monitor",
 };
 
 
@@ -595,7 +596,7 @@ static ssize_t son_read_pbstat_comp_mode(struct file *filep,
 	char buf_read[SON_BUFLEN];
 	ssize_t len;
     int cur_mode = atomic_read(&son_pbstat_comp_mode);
-    len = scnprintf(buf_read, SON_BUFLEN, "%10s (0:Default/1:Revised) \n", comp_mode_names[cur_mode]);
+    len = scnprintf(buf_read, SON_BUFLEN, "%10s (0:Default/1:Revised/2:Default_monitor) \n", comp_mode_names[cur_mode]);
 
 	return simple_read_from_buffer(buf, size, ppos, buf_read, len);
 
@@ -616,7 +617,7 @@ static ssize_t son_write_pbstat_comp_mode(struct file *filep,
 
     if(!kstrtol(buf_write,0,&temp_write)){
         if(temp_write >= SON_COMPMODE_ORIGIN && 
-                temp_write <= SON_COMPMODE_REVISD){
+                temp_write <= SON_COMPMODE_ORIGIN_MONITOR){
             if(atomic_read(&son_pbstat_comp_mode) != temp_write){
                 atomic_set(&son_pbstat_comp_mode,temp_write);
             }

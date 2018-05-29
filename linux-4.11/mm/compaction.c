@@ -2674,7 +2674,7 @@ static enum compact_result son_compact_zone(struct zone *zone, struct son_compac
             continue;			
 //            goto out;                              
 		case ISOLATE_SUCCESS:
-            trace_printk("isolate migrate pages success !!\n");            
+//            trace_printk("isolate migrate pages success !!\n");            
 //            goto out;
 			;
 		}
@@ -2749,6 +2749,173 @@ out:
 
 	return ret;
 }
+
+static enum compact_result compact_zone_monitor(struct zone *zone, struct compact_control *cc)
+{
+	enum compact_result ret;
+	unsigned long start_pfn = zone->zone_start_pfn;
+	unsigned long end_pfn = zone_end_pfn(zone);
+	const int migratetype = gfpflags_to_migratetype(cc->gfp_mask);
+	const bool sync = cc->mode != MIGRATE_ASYNC;
+
+	ret = compaction_suitable(zone, cc->order, cc->alloc_flags,
+							cc->classzone_idx);
+	/* Compaction is likely to fail */
+	if (ret == COMPACT_SUCCESS || ret == COMPACT_SKIPPED)
+		return ret;
+
+	/* huh, compaction_suitable is returning something unexpected */
+	VM_BUG_ON(ret != COMPACT_CONTINUE);
+
+	/*
+	 * Clear pageblock skip if there were failures recently and compaction
+	 * is about to be retried after being deferred.
+	 */
+	if (compaction_restarting(zone, cc->order))
+		__reset_isolation_suitable(zone);
+
+	/*
+	 * Setup to move all movable pages to the end of the zone. Used cached
+	 * information on where the scanners should start (unless we explicitly
+	 * want to compact the whole zone), but check that it is initialised
+	 * by ensuring the values are within zone boundaries.
+	 */
+	if (cc->whole_zone) {
+		cc->migrate_pfn = start_pfn;
+		cc->free_pfn = pageblock_start_pfn(end_pfn - 1);
+	} else {
+		cc->migrate_pfn = zone->compact_cached_migrate_pfn[sync];
+		cc->free_pfn = zone->compact_cached_free_pfn;
+		if (cc->free_pfn < start_pfn || cc->free_pfn >= end_pfn) {
+			cc->free_pfn = pageblock_start_pfn(end_pfn - 1);
+			zone->compact_cached_free_pfn = cc->free_pfn;
+		}
+		if (cc->migrate_pfn < start_pfn || cc->migrate_pfn >= end_pfn) {
+			cc->migrate_pfn = start_pfn;
+			zone->compact_cached_migrate_pfn[0] = cc->migrate_pfn;
+			zone->compact_cached_migrate_pfn[1] = cc->migrate_pfn;
+		}
+
+		if (cc->migrate_pfn == start_pfn)
+			cc->whole_zone = true;
+	}
+
+	cc->last_migrated_pfn = 0;
+
+	trace_mm_compaction_begin(start_pfn, cc->migrate_pfn,
+				cc->free_pfn, end_pfn, sync);
+
+	migrate_prep_local();
+
+	while ((ret = compact_finished(zone, cc, migratetype)) ==
+						COMPACT_CONTINUE) {
+		int err;
+
+		switch (isolate_migratepages(zone, cc)) {
+		case ISOLATE_ABORT:
+			ret = COMPACT_CONTENDED;
+			putback_movable_pages(&cc->migratepages);
+			cc->nr_migratepages = 0;
+			goto out;
+		case ISOLATE_NONE:
+			/*
+			 * We haven't isolated and migrated anything, but
+			 * there might still be unflushed migrations from
+			 * previous cc->order aligned block.
+			 */
+			goto check_drain;
+		case ISOLATE_SUCCESS:
+			;
+		}
+
+		err = migrate_pages_monitor(&cc->migratepages, compaction_alloc,
+				compaction_free, (unsigned long)cc, cc->mode,
+				MR_COMPACTION);
+
+		trace_mm_compaction_migratepages(cc->nr_migratepages, err,
+							&cc->migratepages);
+
+		/* All pages were either migrated or will be released */
+		cc->nr_migratepages = 0;
+		if (err) {
+			putback_movable_pages(&cc->migratepages);
+			/*
+			 * migrate_pages() may return -ENOMEM when scanners meet
+			 * and we want compact_finished() to detect it
+			 */
+			if (err == -ENOMEM && !compact_scanners_met(cc)) {
+				ret = COMPACT_CONTENDED;
+				goto out;
+			}
+			/*
+			 * We failed to migrate at least one page in the current
+			 * order-aligned block, so skip the rest of it.
+			 */
+			if (cc->direct_compaction &&
+						(cc->mode == MIGRATE_ASYNC)) {
+				cc->migrate_pfn = block_end_pfn(
+						cc->migrate_pfn - 1, cc->order);
+				/* Draining pcplists is useless in this case */
+				cc->last_migrated_pfn = 0;
+
+			}
+		}
+
+check_drain:
+		/*
+		 * Has the migration scanner moved away from the previous
+		 * cc->order aligned block where we migrated from? If yes,
+		 * flush the pages that were freed, so that they can merge and
+		 * compact_finished() can detect immediately if allocation
+		 * would succeed.
+		 */
+		if (cc->order > 0 && cc->last_migrated_pfn) {
+			int cpu;
+			unsigned long current_block_start =
+				block_start_pfn(cc->migrate_pfn, cc->order);
+
+			if (cc->last_migrated_pfn < current_block_start) {
+				cpu = get_cpu();
+				lru_add_drain_cpu(cpu);
+				drain_local_pages(zone);
+				put_cpu();
+				/* No more flushing until we migrate again */
+				cc->last_migrated_pfn = 0;
+			}
+		}
+
+	}
+
+out:
+	/*
+	 * Release free pages and update where the free scanner should restart,
+	 * so we don't leave any returned pages behind in the next attempt.
+	 */
+	if (cc->nr_freepages > 0) {
+		unsigned long free_pfn = release_freepages(&cc->freepages);
+
+		cc->nr_freepages = 0;
+		VM_BUG_ON(free_pfn == 0);
+		/* The cached pfn is always the first in a pageblock */
+		free_pfn = pageblock_start_pfn(free_pfn);
+		/*
+		 * Only go back, not forward. The cached pfn might have been
+		 * already reset to zone end in compact_finished()
+		 */
+		if (free_pfn > zone->compact_cached_free_pfn)
+			zone->compact_cached_free_pfn = free_pfn;
+	}
+
+	count_compact_events(COMPACTMIGRATE_SCANNED, cc->total_migrate_scanned);
+	count_compact_events(COMPACTFREE_SCANNED, cc->total_free_scanned);
+
+	trace_mm_compaction_end(start_pfn, cc->migrate_pfn,
+				cc->free_pfn, end_pfn, sync, ret);
+
+	return ret;
+}
+
+
 #endif
 #endif
 
@@ -2948,6 +3115,44 @@ static void son_compact_node(int nid)
 
     son_reset_isolation_suitable(pgdat);
 }
+
+/* Compact all zones within a node */
+static void compact_node_monitor(int nid)
+{
+	pg_data_t *pgdat = NODE_DATA(nid);
+	int zoneid;
+	struct zone *zone;
+	struct compact_control cc = {
+		.order = -1,
+		.total_migrate_scanned = 0,
+		.total_free_scanned = 0,
+		.mode = MIGRATE_SYNC,
+		.ignore_skip_hint = true,
+		.whole_zone = true,
+		.gfp_mask = GFP_KERNEL,
+	};
+
+
+	for (zoneid = 0; zoneid < MAX_NR_ZONES; zoneid++) {
+
+		zone = &pgdat->node_zones[zoneid];
+		if (!populated_zone(zone))
+			continue;
+
+		cc.nr_freepages = 0;
+		cc.nr_migratepages = 0;
+		cc.zone = zone;
+		INIT_LIST_HEAD(&cc.freepages);
+		INIT_LIST_HEAD(&cc.migratepages);
+
+		compact_zone_monitor(zone, &cc);
+
+		VM_BUG_ON(!list_empty(&cc.freepages));
+		VM_BUG_ON(!list_empty(&cc.migratepages));
+	}
+}
+
+
 #endif
 #endif
 /* Compact all nodes in the system */
@@ -2963,6 +3168,8 @@ static void compact_nodes(void)
 #if SON_PBSTAT_ENABLE
         if(cur_mode == SON_COMPMODE_REVISD)
             son_compact_node(nid);
+        else if(cur_mode == SON_COMPMODE_ORIGIN_MONITOR)
+            compact_node_monitor(nid);
         else
             compact_node(nid);
 #else

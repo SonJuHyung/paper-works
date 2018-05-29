@@ -117,6 +117,7 @@ void son_kthread_refcount_del_entry(struct mm_struct *mm);
 typedef enum {
     SON_COMPMODE_ORIGIN,
     SON_COMPMODE_REVISD,
+    SON_COMPMODE_ORIGIN_MONITOR,
     SON_COMPMODE_MAX
 } comp_mode_t;
 

@@ -1153,7 +1153,7 @@ int son_pbutil_update_free(struct page *page, unsigned int order)
                         bitmap_clear(pbutil_node->pbutil_movable_bitmap, 
                                 low_pfn - pb_start_pfn, low_end_pfn - low_pfn);
                         pbutil_node->used_movable_page -= (low_end_pfn - low_pfn);
-                    } else {                
+                    } else {
                         pbutil_node->used_unmovable_page -= (low_end_pfn - low_pfn);
                     }
                     goto out;     
@@ -1174,7 +1174,10 @@ int son_pbutil_update_free(struct page *page, unsigned int order)
                     /* if previous level is SON_PB_UMOV, type of level 
                      * can not be changed until all unmovable page freed  
                      * we area freeing movable page so keep previous level */
-                } else {
+                } else if(mgtype == SON_PB_BUDDY){
+                    cur_level = calc_pbutil_level(pbutil_node->used_movable_page);
+
+                }else {
                     /* if current allocation is unmovable allocation 
                      * just increases unmovable count and doesn't 
                      * log allocation status to bitmap */
@@ -1186,6 +1189,7 @@ int son_pbutil_update_free(struct page *page, unsigned int order)
                         cur_level = pre_level;
                     /* all the unmovable pages are freed we can allocate 
                      * THP in this page block by compaction!! */
+
                 }
             }
 

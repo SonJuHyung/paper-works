@@ -40,6 +40,9 @@ extern int migrate_pages(struct list_head *l, new_page_t new, free_page_t free,
 		unsigned long private, enum migrate_mode mode, int reason);
 extern int son_migrate_pages(struct list_head *l, new_page_t new, free_page_t free,
 		unsigned long private, enum migrate_mode mode, int reason);
+extern int migrate_pages_monitor(struct list_head *l, new_page_t new, free_page_t free,
+		unsigned long private, enum migrate_mode mode, int reason);
+
 extern int isolate_movable_page(struct page *page, isolate_mode_t mode);
 extern void putback_movable_page(struct page *page);
 

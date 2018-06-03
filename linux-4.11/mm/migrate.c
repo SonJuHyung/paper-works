@@ -1048,8 +1048,6 @@ static int __unmap_and_move(struct page *page, struct page *newpage,
 		lock_page(page);
 	}
 
-    page->mgtype = SON_PB_ISOLATE;
-
 	if (PageWriteback(page)) {
 		/*
 		 * Only in the case of a full synchronous migration is it
@@ -1492,7 +1490,7 @@ unlock_nothing:
 
                 /* Step 1-3. decrease used movable page count in node 
                  * because page_from is unmapped */ 
-
+#if 0
                 if(node_from->used_movable_page){
                     node_from->used_movable_page--;
                     /* Step 1-2. clear corresponding bitmap to page in page_from  */
@@ -1500,7 +1498,8 @@ unlock_nothing:
                             pfn_from - pfn_startpb_from, 1);
 
                 }
-
+#endif 
+//                trace_printk("son_v1\n");
                 level_pre = node_from->level;
 
                 /* if page block's state which contains page_from is SON_PB_ISOMG 
@@ -1533,7 +1532,7 @@ unlock_nothing:
 
                             node_from->level = level_cur;
 
-                            trace_printk("migrate(isomg_some)-movepb(used:%lu/iso:%lu/%10s:%d->%10s:%d)\n", 
+                            trace_printk("migrate(isomg_some)-move_pb(used:%lu/iso:%lu/%10s:%d->%10s:%d)\n", 
                                     node_from->used_movable_page,
                                     node_from->isolated_movable_pages,
                                     pbstat_names[level_pre], 
@@ -1562,7 +1561,7 @@ unlock_nothing:
 
                         node_from->level = level_cur;
 
-                        trace_printk("migrate(normal)-movepb(used:%lu/iso:%lu/%10s:%d->%10s:%d)\n", 
+                        trace_printk("migrate(normal)-move_pb(used:%lu/iso:%lu/%10s:%d->%10s:%d)\n", 
                                     node_from->used_movable_page,
                                     node_from->isolated_movable_pages,
                                     pbstat_names[level_pre], 
@@ -1644,7 +1643,7 @@ unlock_nothing:
 
                                 node_to->level = level_cur;
 
-                                trace_printk("migrate(isofr_some)-movepb(used:%lu/iso:%lu/%10s:%d->%10s:%d)\n", 
+                                trace_printk("migrate(isofr_some)-move_pb(used:%lu/iso:%lu/%10s:%d->%10s:%d)\n", 
                                         node_to->used_movable_page,
                                         node_to->isolated_movable_pages,
                                         pbstat_names[level_pre], 
@@ -1672,7 +1671,7 @@ unlock_nothing:
 
                             node_to->level = level_cur;
 
-                            trace_printk("migrate(normal)-movepb(used:%lu/iso:%lu/%10s:%d->%10s:%d)\n", 
+                            trace_printk("migrate(normal)-move_pb(used:%lu/iso:%lu/%10s:%d->%10s:%d)\n", 
                                     node_to->used_movable_page,
                                     node_to->isolated_movable_pages,
                                     pbstat_names[level_pre], 
@@ -1693,7 +1692,7 @@ unlock_something:
         if (rc != -EAGAIN) {
             if (likely(!__PageMovable(page))) {
                 putback_lru_page(page);
-#if 1
+#if 0
                 if(reason == MR_COMPACTION){
                     trace_printk("putback(faied), error, putback \n");
 
@@ -1762,6 +1761,7 @@ unlock_something:
         }else{
             set_pageblock_skip(page);
         }
+
 put_new:
 		if (put_new_page)
 			put_new_page(newpage, private);
@@ -1961,7 +1961,7 @@ unlock_nothing:
 
                 /* Step 1-3. decrease used movable page count in node 
                  * because page_from is unmapped */ 
-
+#if 1
                 if(node_from->used_movable_page){
                     node_from->used_movable_page--;
                     /* Step 1-2. clear corresponding bitmap to page in page_from  */
@@ -1969,7 +1969,7 @@ unlock_nothing:
                             pfn_from - pfn_startpb_from, 1);
 
                 }
-
+#endif
                 level_pre = node_from->level;
 
                 /* if page block's state which contains page_from is SON_PB_ISOMG 
@@ -2002,7 +2002,7 @@ unlock_nothing:
 
                             node_from->level = level_cur;
 
-                            trace_printk("migrate(isomg_some)-movepb(used:%lu/iso:%lu/%10s:%d->%10s:%d)\n", 
+                            trace_printk("migrate(isomg_some)-move_pb(used:%lu/iso:%lu/%10s:%d->%10s:%d)\n", 
                                     node_from->used_movable_page,
                                     node_from->isolated_movable_pages,
                                     pbstat_names[level_pre], 
@@ -2031,7 +2031,7 @@ unlock_nothing:
 
                         node_from->level = level_cur;
 
-                        trace_printk("migrate(normal)-movepb(used:%lu/iso:%lu/%10s:%d->%10s:%d)\n", 
+                        trace_printk("migrate(normal)-move_pb(used:%lu/iso:%lu/%10s:%d->%10s:%d)\n", 
                                     node_from->used_movable_page,
                                     node_from->isolated_movable_pages,
                                     pbstat_names[level_pre], 
@@ -2113,7 +2113,7 @@ unlock_nothing:
 
                                 node_to->level = level_cur;
 
-                                trace_printk("migrate(isofr_some)-movepb(used:%lu/iso:%lu/%10s:%d->%10s:%d)\n", 
+                                trace_printk("migrate(isofr_some)-move_pb(used:%lu/iso:%lu/%10s:%d->%10s:%d)\n", 
                                         node_to->used_movable_page,
                                         node_to->isolated_movable_pages,
                                         pbstat_names[level_pre], 
@@ -2141,7 +2141,7 @@ unlock_nothing:
 
                             node_to->level = level_cur;
 
-                            trace_printk("migrate(normal)-movepb(used:%lu/iso:%lu/%10s:%d->%10s:%d)\n", 
+                            trace_printk("migrate(normal)-move_pb(used:%lu/iso:%lu/%10s:%d->%10s:%d)\n", 
                                     node_to->used_movable_page,
                                     node_to->isolated_movable_pages,
                                     pbstat_names[level_pre], 

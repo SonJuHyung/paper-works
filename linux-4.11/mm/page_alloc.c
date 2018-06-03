@@ -1172,7 +1172,7 @@ static void free_one_page(struct zone *zone,
 #if SON_PBSTAT_ENABLE 
 #if 1
 //    if(migratetype == MIGRATE_MOVABLE)
-    if(page->mgtype == SON_PB_MOVABLE)
+    if(page->mgtype == SON_PB_MOVABLE || page->mgtype == SON_PB_BUDDY)
         son_pbutil_update_free(page,order);
 #endif
 #if 0
@@ -2744,7 +2744,7 @@ static struct page *rmqueue_pcplist(struct zone *preferred_zone,
         page->mgtype = migratetype;
 #if 1
 //        if(migratetype == MIGRATE_MOVABLE)
-        if(page->mgtype == SON_PB_MOVABLE)
+        if(page->mgtype == SON_PB_MOVABLE || page->mgtype == SON_PB_BUDDY)
             son_pbutil_update_alloc(page,order);
 #endif
 #if 0 
@@ -2811,7 +2811,7 @@ struct page *rmqueue(struct zone *preferred_zone,
         page->mgtype = migratetype;
 #if 1
         //        if(migratetype == MIGRATE_MOVABLE)
-        if(page->mgtype == SON_PB_MOVABLE)
+        if(page->mgtype == SON_PB_MOVABLE || page->mgtype == SON_PB_BUDDY)
             son_pbutil_update_alloc(page,order);
 #endif
 #if 0

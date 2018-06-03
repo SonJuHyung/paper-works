@@ -1153,6 +1153,7 @@ int son_pbutil_update_free(struct page *page, unsigned int order)
                         bitmap_clear(pbutil_node->pbutil_movable_bitmap, 
                                 low_pfn - pb_start_pfn, low_end_pfn - low_pfn);
                         pbutil_node->used_movable_page -= (low_end_pfn - low_pfn);
+//                        trace_printk("son_v2\n");
                     } else {
                         pbutil_node->used_unmovable_page -= (low_end_pfn - low_pfn);
                     }
@@ -1167,6 +1168,8 @@ int son_pbutil_update_free(struct page *page, unsigned int order)
                     bitmap_clear(pbutil_node->pbutil_movable_bitmap, 
                             low_pfn - pb_start_pfn, low_end_pfn - low_pfn);
                     pbutil_node->used_movable_page -= (low_end_pfn - low_pfn);
+//                    trace_printk("son_v3\n");
+
                     if(pre_level == SON_PB_UMOV)
                         cur_level = pre_level;
                     else

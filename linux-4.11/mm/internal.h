@@ -210,6 +210,8 @@ struct compact_control {
 struct son_compact_control{
     struct list_head freepages;	/* List of free pages to migrate to         init */
     struct list_head migratepages;	/* List of pages being migrated         init */
+//    struct list_head *cache_migrate_node;
+//    struct list_head *cache_free_node;
     unsigned long nr_freepages;	/* Number of isolated free pages            init */ 
     unsigned long nr_cur_isolated_freepages;
     unsigned long nr_migratepages;	/* Number of pages to migrate           init */

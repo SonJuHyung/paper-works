@@ -209,10 +209,12 @@ struct proc_dir_entry* son_pbstat_show_debug_data;
 struct proc_dir_entry* son_pbstat_comp_mig_level_data;
 struct proc_dir_entry* son_pbstat_comp_free_level_data;
 struct proc_dir_entry* son_pbstat_comp_mode_data;
+struct proc_dir_entry* son_pbstat_mig_threshold_data;
 
 atomic_t son_pbstat_comp_mig_level;
 atomic_t son_pbstat_comp_free_level;
 atomic_t son_pbstat_comp_mode;
+atomic_t son_pbstat_mig_threshold;
 
 char * const pbstat_names[SON_PB_MAX] = {
 	 "White",
@@ -635,6 +637,50 @@ static struct file_operations son_pbstat_comp_mode_ops = {
 	.llseek = generic_file_llseek,
 };
 
+static ssize_t son_read_mig_threshold(struct file *filep, 
+        char __user *buf, size_t size, loff_t *ppos)
+{
+	char buf_read[SON_BUFLEN];
+	ssize_t len;
+    long cur_value = atomic_read(&son_pbstat_mig_threshold);
+    len = scnprintf(buf_read, SON_BUFLEN, "%ld \n", cur_value);
+
+	return simple_read_from_buffer(buf, size, ppos, buf_read, len);
+
+}
+
+static ssize_t son_write_mig_threshold(struct file *filep, 
+		const char __user *buf, size_t size, loff_t *ppos)
+{
+    char buf_write[SON_BUFLEN];
+    long temp_write;
+    size_t len_written;
+
+    if(size > SON_BUFLEN)
+        size = SON_BUFLEN;
+
+    memset(buf_write,0,SON_BUFLEN);
+    len_written = simple_write_to_buffer(buf_write,SON_BUFLEN,ppos,buf,size);
+
+    if(!kstrtol(buf_write,0,&temp_write)){
+        if(temp_write > 0){
+            if(atomic_read(&son_pbstat_mig_threshold) != temp_write){
+                atomic_set(&son_pbstat_mig_threshold,temp_write);
+            }
+        }else{
+            /* error stat : data from user is negative value */
+            return -EINVAL;
+        }
+    }
+    return len_written;
+}
+
+static struct file_operations son_pbstat_mig_threshold_ops = {
+	.read = son_read_mig_threshold,
+    .write = son_write_mig_threshold,
+	.llseek = generic_file_llseek,
+};
+
 #endif
 
 static int __init son_proc_init(void)
@@ -708,6 +754,11 @@ static int __init son_proc_init(void)
     if(!son_pbstat_comp_mode_data)
         goto out;
 
+    /*  page block utilization based sysfs compaction threshold level.  */
+    atomic_set(&son_pbstat_mig_threshold, 0);
+	son_pbstat_mig_threshold_data = proc_create("pbstat_compact_mig_threshold", 0, son_parent_dir, &son_pbstat_mig_threshold_ops);
+    if(!son_pbstat_mig_threshold_data)
+        goto out;
 #endif
     return 0;
 

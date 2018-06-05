@@ -145,6 +145,7 @@ extern atomic_t son_pbstat_comp_mig_level;
 extern atomic_t son_pbstat_comp_free_level;
 /* sysfs compaction mode (0:original 1:revised) */
 extern atomic_t son_pbstat_comp_mode;
+extern atomic_t son_pbstat_mig_threshold;
 
 /* page allocatino type which will be logged in page->mgtype */
 typedef enum {                  
@@ -222,7 +223,7 @@ extern struct kmem_cache *son_pbutil_node_cachep;
 /* slab object for page block util node which will be used in radix from pg_data_t */
 extern spinlock_t son_pbutil_tree_lock;
 /* spinlock which is used in pbutil_node_t radix tree for kcompactd kernel thread  */
-pbutil_node_t *son_pbutil_node_alloc(void);
+pbutil_node_t *son_pbutil_node_alloc(unsigned long block_start_pfn);
 /* allocate pbutil_node_t to insert pb usage radix tree  */
 void son_pbutil_node_free(pbutil_node_t *node);
 /* free pbutil_node_t   */

@@ -889,7 +889,7 @@ int son_pbutil_update_alloc(struct page *page, unsigned int order)
              * we need to allocate new pbutil_node_t and insert to 
              * pbutil_tree_t and add the page to pbutil_list_t */
 
-            pbutil_node = son_pbutil_node_alloc();
+            pbutil_node = son_pbutil_node_alloc(pb_start_pfn);
             if(pbutil_node){ 
 
 #if SON_DEBUG_ENABLE
@@ -921,7 +921,6 @@ int son_pbutil_update_alloc(struct page *page, unsigned int order)
 
                     pbutil_node->used_movable_page += (low_end_pfn - low_pfn);
                     cur_level = calc_pbutil_level(pbutil_node->used_movable_page);
-                    pbutil_node->pb_head_pfn = pb_start_pfn;
                     INIT_LIST_HEAD(&pbutil_node->pbutil_level);
                 }else{
 
@@ -930,7 +929,6 @@ int son_pbutil_update_alloc(struct page *page, unsigned int order)
                      * log allocation status to bitmap */
                     pbutil_node->used_unmovable_page += (low_end_pfn - low_pfn);
                     cur_level = SON_PB_UMOV;
-                    pbutil_node->pb_head_pfn = pb_start_pfn;
                     INIT_LIST_HEAD(&pbutil_node->pbutil_level);
                 }
 
@@ -1312,7 +1310,7 @@ int son_pbutil_update_alloc_umov(struct page *page, unsigned int order)
         pbutil_node = son_pbutil_node_lookup(pbutil_tree, pb_start_pfn);
 //        rcu_read_unlock();
         if(!pbutil_node){
-//            pbutil_node = son_pbutil_node_alloc();
+//            pbutil_node = son_pbutil_node_alloc(pb_start_pfn);
             trace_printk("SJH_alloc_new umovable page is allocated \n");
 #if 0
             if(pbutil_node){ 
@@ -1323,13 +1321,11 @@ int son_pbutil_update_alloc_umov(struct page *page, unsigned int order)
                             low_pfn - pb_start_pfn, low_end_pfn - low_pfn);
                     pbutil_node->used_movable_page += (low_end_pfn - low_pfn);
                     cur_level = calc_pbutil_level(pbutil_node->used_movable_page);
-                    pbutil_node->pb_head_pfn = pb_start_pfn;
                     INIT_LIST_HEAD(&pbutil_node->pbutil_level);
                 }else{
 
                     pbutil_node->used_unmovable_page += (low_end_pfn - low_pfn);
                     cur_level = SON_PB_UMOV;
-                    pbutil_node->pb_head_pfn = pb_start_pfn;
                     INIT_LIST_HEAD(&pbutil_node->pbutil_level);
                 }
 

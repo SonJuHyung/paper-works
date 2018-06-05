@@ -163,7 +163,7 @@ void __init son_kmem_cache_init(void)
 }
 
 /* allocate pbstat node for radix tree if page in page block range is first allocated */
-pbutil_node_t *son_pbutil_node_alloc(void)
+pbutil_node_t *son_pbutil_node_alloc(unsigned long block_start_pfn)
 {
     pbutil_node_t *node;
 
@@ -176,8 +176,8 @@ pbutil_node_t *son_pbutil_node_alloc(void)
     node->used_movable_page = 0;
     node->used_unmovable_page = 0;
     node->isolated_movable_pages = 0;
-    node->pb_head_pfn = 0;
-    node->level = SON_PB_MAX;
+    node->pb_head_pfn = block_start_pfn;
+    node->level = SON_PB_WHITE;
 
 	return node;
 }

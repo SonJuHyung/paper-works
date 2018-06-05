@@ -200,7 +200,9 @@ struct compact_control {
     unsigned long nr_migratepb; /* scanned page block count  */
     unsigned long nr_clearedpb; /* cleared page block count  */
 #if SON_PBSTAT_ENABLE
+    unsigned long nr_migratepages_real;
     long cur_level;
+    long mig_threshold;
 #endif
 #endif
 };
@@ -212,12 +214,13 @@ struct son_compact_control{
     struct list_head migratepages;	/* List of pages being migrated         init */
 //    struct list_head *cache_migrate_node;
 //    struct list_head *cache_free_node;
+    unsigned long nr_migratepages_real;
     unsigned long nr_freepages;	/* Number of isolated free pages            init */ 
     unsigned long nr_cur_isolated_freepages;
     unsigned long nr_migratepages;	/* Number of pages to migrate           init */
     unsigned long nr_cur_isolated_migratepages;
-    unsigned long nr_isolated_migratepb; /* scanned page block count                 init */
-    unsigned long nr_isolated_freepb; /* scanned page block count                 init */
+    unsigned long nr_isolated_migratepb; /* scanned page block count        init */
+    unsigned long nr_isolated_freepb; /* scanned page block count           init */
     unsigned long nr_clearedpb; /* cleared page block count                 init */
     unsigned long total_migrate_scanned; /* total migrated page count       init FIXME*/
     unsigned long total_free_scanned; /* total free scannned                init FIXME*/
@@ -230,7 +233,9 @@ struct son_compact_control{
     struct zone *zone;        /* working zone                               init */
     bool contended;			/* Signal lock or sched contention */
     int cur_mig_level; /* current target compaction level                   init */
-    int cur_free_level; /* current target compaction level                   init */
+    int cur_free_level; /* current target compaction level                  init */ 
+    long mig_threshold;
+
 };
 #endif
 #endif

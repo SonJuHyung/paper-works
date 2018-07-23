@@ -1171,7 +1171,6 @@ static void free_one_page(struct zone *zone,
 #ifdef CONFIG_SON
 #if SON_PBSTAT_ENABLE 
 #if 1
-//    if(migratetype == MIGRATE_MOVABLE)
     if(page->mgtype == SON_PB_MOVABLE || page->mgtype == SON_PB_BUDDY)
         son_pbutil_update_free(page,order);
 #endif
@@ -2559,7 +2558,6 @@ void free_hot_cold_page(struct page *page, bool cold)
 #ifdef CONFIG_SON
 #if SON_PBSTAT_ENABLE
 #if 1
-//    if(migratetype == MIGRATE_MOVABLE)
     if(page->mgtype == SON_PB_MOVABLE || page->mgtype == SON_PB_BUDDY)
         son_pbutil_update_free(page,0);
 #endif
@@ -2743,7 +2741,6 @@ static struct page *rmqueue_pcplist(struct zone *preferred_zone,
 
         page->mgtype = migratetype;
 #if 1
-//        if(migratetype == MIGRATE_MOVABLE)
         if(page->mgtype == SON_PB_MOVABLE || page->mgtype == SON_PB_BUDDY)
             son_pbutil_update_alloc(page,order);
 #endif
@@ -2810,7 +2807,6 @@ struct page *rmqueue(struct zone *preferred_zone,
     if(page){
         page->mgtype = migratetype;
 #if 1
-        //        if(migratetype == MIGRATE_MOVABLE)
         if(page->mgtype == SON_PB_MOVABLE || page->mgtype == SON_PB_BUDDY)
             son_pbutil_update_alloc(page,order);
 #endif
@@ -6047,7 +6043,7 @@ static void __paginginit free_area_init_core(struct pglist_data *pgdat)
     int pblevel=0;
     pbutil_list_t * son_pblist = NULL;
     pbutil_tree_t *son_pbtree = &pgdat->son_pbutil_tree;     
-
+    
     INIT_RADIX_TREE(&son_pbtree->pbutil_tree_root, GFP_ATOMIC);
     spin_lock_init(&son_pbtree->pbutil_tree_lock);
     son_pbtree->node_count = 0;
@@ -6152,7 +6148,8 @@ static void __paginginit free_area_init_core(struct pglist_data *pgdat)
         }
 #endif
         /* version 1  */ 
-        spin_lock_init(&zone->pbutil_list_lock);
+        zone->son_pbstat_cached_free_pb = NULL;
+        spin_lock_init(&zone->pbutil_list_lock);        
         for(pblevel = 0 ; pblevel < SON_PB_MAX ; pblevel++){
             son_pblist = &zone->son_pbutil_list[pblevel];
             INIT_LIST_HEAD(&son_pblist->pbutil_list_head);

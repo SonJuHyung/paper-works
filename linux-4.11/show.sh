@@ -5,11 +5,15 @@ MODE=2
 # ppc
 #MODE=1
 
-#THRESHOLD=20
-THRESHOLD=100
+# THRESHOLD=20
+THRESHOLD=2000
+LEVEL_MIG=1
+LEVEL_FRE=3
 
 echo ${MODE} > /proc/son/pbstat_compact_mode 
-echo ${THRESHOLD} > /proc/son/pbstat_compact_mig_threshold 
+echo ${THRESHOLD} > /proc/son/pbstat_compact_mig_threshold  
+# echo ${LEVEL_MIG} > /proc/son/pbstat_compact_mig_level
+# echo ${LEVEL_FRE} > /proc/son/pbstat_compact_free_level
 
 echo "before"
 cat /proc/vmstat | grep migrate

@@ -126,8 +126,9 @@ typedef enum {                  /* page block is ... */
     SON_PB_BLUE,                /* 1%  ~ 29% used    */
     SON_PB_SYSFS_MIN = SON_PB_BLUE,
     SON_PB_GREEN,               /* 30% ~ 69% used    */
-    SON_PB_YELLOW,              /* 70% ~ 99% used    */
-    SON_PB_SYSFS_MAX = SON_PB_YELLOW,
+    SON_PB_YELLOW,              /* 70% ~ 99% used    */ 
+    SON_PB_ORANGE,
+    SON_PB_SYSFS_MAX = SON_PB_ORANGE,
     SON_PB_RED,                 /* 100%      used    */ 
     SON_PB_UMOV,   /* compaction is useless because of unmovable page */
     SON_PB_ISOMG,    /* isolated pb during compaction */
@@ -146,6 +147,7 @@ extern atomic_t son_pbstat_comp_free_level;
 /* sysfs compaction mode (0:original 1:revised) */
 extern atomic_t son_pbstat_comp_mode;
 extern atomic_t son_pbstat_mig_threshold;
+extern atomic_t compact_run;
 
 /* page allocatino type which will be logged in page->mgtype */
 typedef enum {                  

@@ -210,6 +210,7 @@ struct proc_dir_entry* son_pbstat_comp_mig_level_data;
 struct proc_dir_entry* son_pbstat_comp_free_level_data;
 struct proc_dir_entry* son_pbstat_comp_mode_data;
 struct proc_dir_entry* son_pbstat_mig_threshold_data;
+struct proc_dir_entry* son_running_debug_data;
 
 atomic_t son_pbstat_comp_mig_level;
 atomic_t son_pbstat_comp_free_level;
@@ -221,6 +222,7 @@ char * const pbstat_names[SON_PB_MAX] = {
 	 "Blue",
 	 "Green",
 	 "Yellow",
+     "Orange",
 	 "Red",
 	 "Unmovable",
      "Isolated(migrate)",
@@ -497,7 +499,7 @@ static ssize_t son_read_pbstat_comp_mig_level(struct file *filep,
 	char buf_read[SON_BUFLEN_LONG];
 	ssize_t len;
     int cur_level = atomic_read(&son_pbstat_comp_mig_level);
-	len = scnprintf(buf_read, SON_BUFLEN_LONG, "current level : %10s (1:Blue/2:Green/3:Yellow, must be smaller than pbstat_compact_free_level) \n", pbstat_names[cur_level]);
+	len = scnprintf(buf_read, SON_BUFLEN_LONG, "current level : %10s (1:Blue/2:Green/3:Yellow/4:Orange, must be smaller than pbstat_compact_free_level) \n", pbstat_names[cur_level]);
 
 	return simple_read_from_buffer(buf, size, ppos, buf_read, len);
 
@@ -547,7 +549,7 @@ static ssize_t son_read_pbstat_comp_free_level(struct file *filep,
 	char buf_read[SON_BUFLEN_LONG];
 	ssize_t len;
     int cur_level = atomic_read(&son_pbstat_comp_free_level);
-	len = scnprintf(buf_read, SON_BUFLEN_LONG, "current level : %10s (1:Blue/2:Green/3:Yellow, must be bigger than pbstat_compact_mig_level) \n", pbstat_names[cur_level]);
+	len = scnprintf(buf_read, SON_BUFLEN_LONG, "current level : %10s (1:Blue/2:Green/3:Yellow/4:Orange, must be bigger than pbstat_compact_mig_level) \n", pbstat_names[cur_level]);
 
 	return simple_read_from_buffer(buf, size, ppos, buf_read, len);
 
@@ -681,90 +683,142 @@ static struct file_operations son_pbstat_mig_threshold_ops = {
 	.llseek = generic_file_llseek,
 };
 
+static int running_debug_show(struct seq_file *m, void *arg)
+{
+	pg_data_t *pgdat = (pg_data_t *)arg;
+    long cur_value = atomic_read(&compact_run);
+	seq_printf(m, "Node %d : %ld \n", pgdat->node_id,cur_value);
+
+	return 0;
+}
+
+static struct seq_operations son_running_debug_seq_ops = {
+	.start	= pbstat_start, 
+	.next = pbstat_next,
+	.stop = pbstat_stop,
+	.show = running_debug_show
+};
+
+static int son_running_debug_open(struct inode *inode, struct file *file) 
+{
+    return seq_open(file, &son_running_debug_seq_ops);
+}
+
+static struct file_operations son_running_debug_ops = {
+	.open = son_running_debug_open,
+	.read = seq_read,
+    .llseek = seq_lseek,
+    .release = seq_release,
+};
+
 #endif
 
 static int __init son_proc_init(void)
 {
 
-	/* init procfs */ 
+	/* init procfs for son directory */ 
     son_parent_dir = proc_mkdir("son",NULL);
     if(!son_parent_dir)
-        goto out;
+        goto error;
 
 #if SON_PBSCAND_ENABLE
+    /* initialize page block usage scanning kernel thread variable to disabled. */
     atomic_set(&son_scan_pbstate_enable, SON_DISABLE);
 
-    /*  page usage kernel thread related entry  */
+    /* page block usage kernel thread related entry which can be seen in /proc/son/scan_pbstat_enable */
 	son_scan_pbstat_enable_data = proc_create("scan_pbstat_enable", 0, son_parent_dir, &son_scan_pbstat_enable_ops);
     if(!son_scan_pbstat_enable_data)
-        goto out;
+        goto error;
 #endif 
 
 #if SON_DEBUG_ENABLE
+    /* initialize debug message printing variable to disabled. */
     atomic_set(&son_debug_enable,SON_DISABLE);
 
+    /* debug message related entry which can be seen in /proc/son/debug */
 	son_debug_data = proc_create("debug", 0, son_parent_dir, &son_debug_ops);
-    if(!son_debug_data){
-
-        goto out;
-    }
+    if(!son_debug_data)
+        goto error;
 
 #endif
 
 #if SON_REFSCAND_ENABLE
+    /* initialize page reference counting kernel thread variable to disabled. */
     atomic_set(&son_scan_refcount_enable, SON_DISABLE);
 
-    /*  page frequency kernel thread related entry  */
+    /* page reference counting kernel thread related entry  which can be seen in /proc/son/scan_refcount_enable */
 	son_scan_refcount_enable_data = proc_create("scan_refcount_enable", 0, son_parent_dir, &son_scan_refcount_enable_ops);
     if(!son_scan_refcount_enable_data)
-        goto out;
+        goto error;
 #endif
 
 #if SON_PBSTAT_ENABLE
-    /*  page block utilization info related entry  */
+    /* page block painter related entry, it shows page block color status. */
 	son_pbstat_show_data = proc_create("pbstat_info_show", 0, son_parent_dir, &son_pbstat_show_enable_ops);
     if(!son_pbstat_show_data)
-        goto out;
+        goto error;
 
-    /*  page block utilization info related entry (for plotting graph) */
+    /* page block painter related entry, it shows page block color status in raw format. */
 	son_pbstat_show_raw_data = proc_create("pbstat_info_show_raw", 0, son_parent_dir, &son_pbstat_show_raw_enable_ops);
     if(!son_pbstat_show_raw_data)
-        goto out;
+        goto error;
 
-    /*  page block utilization info related entry (for debugging) */
+    /* page block painter related entry, it shows page block color status in detail. */
 	son_pbstat_show_debug_data = proc_create("pbstat_info_show_debug", 0, son_parent_dir, &son_pbstat_show_debug_enable_ops);
     if(!son_pbstat_show_debug_data)
-        goto out;
+        goto error;
 
-    /*  page block utilization based sysfs compaction threshold level.  */
+    /* initialize page block compactor's migration target level threshold value to default level(BLUE)  */
     atomic_set(&son_pbstat_comp_mig_level, SON_PB_SYSFS_MIN);
+
+    /* page block compactor's migration target level threshold value related entry 
+     * which can be seen in /proc/son/pbstat_compact_mig_level  */
 	son_pbstat_comp_mig_level_data = proc_create("pbstat_compact_mig_level", 0, son_parent_dir, &son_pbstat_comp_mig_level_ops);
     if(!son_pbstat_comp_mig_level_data)
-        goto out;
+        goto error;
 
-    /*  page block utilization based sysfs compaction threshold level.  */
+    /* initialize page block compactor's free target level threshold to default value(ORANGE) */
     atomic_set(&son_pbstat_comp_free_level, SON_PB_SYSFS_MAX);
+
+    /* page block compactor's free target level threshold value related entry 
+     * which can be seen in /proc/son/pbstat_compact_free_level */
 	son_pbstat_comp_free_level_data = proc_create("pbstat_compact_free_level", 0, son_parent_dir, &son_pbstat_comp_free_level_ops);
     if(!son_pbstat_comp_free_level_data)
-        goto out;
+        goto error;
 
-    /*  page block utilization based sysfs compaction threshold level.  */
+    /* initialize page block compactor's compact mode to default mode(original linux compaction)*/
     atomic_set(&son_pbstat_comp_mode, SON_COMPMODE_ORIGIN);
+
+    /* page block compactor's compact mode related entry which can be seen in /proc/son/pbstat_compact_mode */
 	son_pbstat_comp_mode_data = proc_create("pbstat_compact_mode", 0, son_parent_dir, &son_pbstat_comp_mode_ops);
     if(!son_pbstat_comp_mode_data)
-        goto out;
+        goto error;
 
-    /*  page block utilization based sysfs compaction threshold level.  */
+    /* initialize page block compactor's target page block count which must be cleared */
     atomic_set(&son_pbstat_mig_threshold, 0);
+
+    /* page block compactor's target clearing count related entry which can be seen in /proc/son/pbstat_compact_mig_threshold  */
 	son_pbstat_mig_threshold_data = proc_create("pbstat_compact_mig_threshold", 0, son_parent_dir, &son_pbstat_mig_threshold_ops);
     if(!son_pbstat_mig_threshold_data)
-        goto out;
+        goto error;
+
+    /* for debugging perpose  
+     * TODO - fix tagling problem during commit compaction when privious compaction proces is not finished */
+	son_running_debug_data = proc_create("running_debug", 0, son_parent_dir, &son_running_debug_ops);
+    if(!son_running_debug_data)
+        goto error;
+
 #endif
     return 0;
 
-out: 
+error: 
 
 #if SON_PBSTAT_ENABLE 
+    /* error handling process */
+    if(son_running_debug_data)
+        proc_remove(son_running_debug_data);
+    if(son_pbstat_mig_threshold_data)
+        proc_remove(son_pbstat_mig_threshold_data);
     if(son_pbstat_comp_mode_data)
         proc_remove(son_pbstat_comp_mode_data); 
     if(son_pbstat_comp_free_level_data)
@@ -777,6 +831,7 @@ out:
         proc_remove(son_pbstat_show_raw_data);
     if(son_pbstat_show_data)
         proc_remove(son_pbstat_show_data);
+
 #endif
 
 #if SON_REFSCAND_ENABLE 

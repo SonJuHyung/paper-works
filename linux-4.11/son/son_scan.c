@@ -714,10 +714,12 @@ pb_stat_t calc_pbutil_level(unsigned long used_pages)
             break;
         case 6:
         case 7:
+            ret = SON_PB_YELLOW;
+            break;
         case 8:
         case 9:           
             /* 60% ~ 99% used    */
-            ret = SON_PB_YELLOW;
+            ret = SON_PB_ORANGE;            
             break;
         case 10:
             /* 100%      used  */
@@ -1128,11 +1130,12 @@ int son_pbutil_update_free(struct page *page, unsigned int order)
             if(pre_level == SON_PB_ISOMG || pre_level == SON_PB_ISOFR){
                
                 if(mgtype == SON_PB_BUDDY){
+#if SON_DEBUG_ENABLE
                     trace_printk("putback_isofr-used:%lu/iso:%lu (%10s)\n",
                             pbutil_node->used_movable_page,
                             pbutil_node->isolated_movable_pages,
                             pbstat_names[pre_level]);
-
+#endif
                     if(pbutil_node->isolated_movable_pages > 0){
                         pbutil_node->isolated_movable_pages--;
                         if(pbutil_node->isolated_movable_pages > 0)
@@ -1229,6 +1232,7 @@ int son_pbutil_update_free(struct page *page, unsigned int order)
                 pbutil_list->cur_count++;
                 pbutil_node->level = cur_level;
                 //                spin_unlock(&zone->pbutil_list_lock); 
+#if SON_DEBUG_ENABLE                              
                 if(pre_level == SON_PB_ISOFR && mgtype == SON_PB_BUDDY){
                     trace_printk("putback_isofr-used:%lu/iso:%lu (%10s:%d -> %10s:%d)\n", 
                             pbutil_node->used_movable_page,
@@ -1238,6 +1242,7 @@ int son_pbutil_update_free(struct page *page, unsigned int order)
                             pbstat_names[cur_level], 
                             pbutil_list->cur_count);
                 }
+#endif
 
                 
             }                      

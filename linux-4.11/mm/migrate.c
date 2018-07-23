@@ -1610,9 +1610,10 @@ unlock_nothing:
 
                         pbutil_list_cur = &zone->son_pbutil_list[level_cur];
                         list_add_tail(&node_to->pbutil_level,&pbutil_list_cur->pbutil_list_head);
-
+#if 0
                         trace_printk("migrate(isofr_new)-node alloc new in %10s\n",
                                 pbstat_names[level_cur]);
+#endif
                     }else{
                         trace_printk("migrate(isofr_new)-error(node alloc new failed) \n");                  
                         goto unlock_something;
@@ -2445,6 +2446,8 @@ int migrate_pages(struct list_head *from, new_page_t get_new_page,
 	struct page *page2;
 	int swapwrite = current->flags & PF_SWAPWRITE;
 	int rc;
+    struct compact_control *cc;
+
 
 	if (!swapwrite)
 		current->flags |= PF_SWAPWRITE;
@@ -2491,8 +2494,13 @@ int migrate_pages(struct list_head *from, new_page_t get_new_page,
 	nr_failed += retry;
 	rc = nr_failed;
 out:
-	if (nr_succeeded)
+	if (nr_succeeded){
 		count_vm_events(PGMIGRATE_SUCCESS, nr_succeeded);
+        if(reason == MR_COMPACTION){
+            cc = (struct compact_control *)private;
+            cc->nr_migratepages_real += nr_succeeded;        
+        }
+    }
 	if (nr_failed)
 		count_vm_events(PGMIGRATE_FAIL, nr_failed);
 	trace_mm_migrate_pages(nr_succeeded, nr_failed, mode, reason);

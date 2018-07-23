@@ -22,17 +22,16 @@ handler(){
 usage()
 {
     echo ""
-    echo "  usage : # ./son_lat_log.sh -s 10s -w redis -l 1M -f nonfrag -t v1"   
-    echo "        : # ./son_lat_log.sh -s 1m  -w mongodb -l 10M -f frag -t v2"
+    echo "  usage : # ./son_lat_log.sh -s 10s -w redis -f nonfrag -t v1"   
+    echo "        : # ./son_lat_log.sh -s 1m  -w mongodb -f frag -t v2"
     echo ""
 }
 
-info(){
+info(){ 
     echo ""
     echo "experiment info" 
     echo " - workload       : ${WORKLOAD}" 
     echo " - version        : ${VERSION}" 
-    echo " - size           : ${SIZE}" 
     echo " - frag status    : ${FRAG}" 
     echo " - sleep interval : ${SLEEP}"    
     echo ""
@@ -44,11 +43,10 @@ then
     exit 
 fi
 
-SIZE=""
 FRAG=""
 
 # option parsing
-while getopts w:t:s:f:l: opt 
+while getopts w:t:s:f: opt 
 do
     case $opt in 
         w)
@@ -56,9 +54,6 @@ do
             ;;
         t)
             VERSION=$OPTARG
-            ;;
-        l)
-            SIZE=$OPTARG
             ;;
         f)
             FRAG=$OPTARG
@@ -73,20 +68,18 @@ do
     esac
 done
 
-if [ -z ${VERSION} ] || [ -z ${WORKLOAD} ]  || [ -z ${SIZE} ]  || [ -z ${FRAG} ]
+if [ -z ${VERSION} ] || [ -z ${WORKLOAD} ]  || [ -z ${FRAG} ]
 then 
     usage
     exit 0
 fi
 
-FILE_DATA=${DIR_DATA}/lat_result_${WORKLOAD}_${SIZE}_${FRAG}_${VERSION}.txt
+FILE_DATA=${DIR_DATA}/lat_result_${WORKLOAD}_${FRAG}_${VERSION}.txt
 
 if [ -e ${FILE_DATA} ]
 then 
     rm -rf ${FILE_DATA}
 fi
-
-info
 
 PRE_LAT=0
 PRE_MAX=1
@@ -97,26 +90,26 @@ TMP=0
 
 redis-cli config set latency-monitor-threshold 1
 
+info
+
 while [ ${RUNNING} == 1 ];
 do  
-    LAT_CONTEXT=$(redis-cli latency latest | grep -v "fast-command" | awk '/command/ {for(i=1; i<=3; i++) {getline; print}}' | sed -n '2,3p')
+#    LAT_CONTEXT=$(redis-cli latency latest | grep -v "fast-command" | awk '/command/ {for(i=1; i<=3; i++) {getline; print}}' | sed -n '2,3p')
+    LAT_CONTEXT=$(redis-cli latency latest | grep -v "fast-command" | sed -n '2,3p')
     CUR_LAT=$(echo ${LAT_CONTEXT} | cut -d " " -f 1)
     CUR_MAX=$(echo ${LAT_CONTEXT} | cut -d " " -f 2)
-
-    FRAG_CONTEXT=$(cat /sys/kernel/debug/extfrag/unusable_index | grep Normal)   
-    FRAG=$(echo $FRAG_CONTEXT | awk '{ split($0,arr," "); print(arr[14]); }')
 
     if [ ! -z ${CUR_LAT} ] && [ ! -z ${CUR_MAX} ]
     then
         if [ "$CUR_MAX" -gt "$PRE_MAX" ]
         then 
-            echo "${COUNT},${CUR_MAX},${FRAG}"
-            echo "${COUNT},${CUR_MAX},${FRAG}" >> ${FILE_DATA} 
+            echo "${COUNT},${CUR_MAX}"
+            echo "${COUNT},${CUR_MAX}" >> ${FILE_DATA} 
             PRE_MAX=${CUR_MAX}
 
         else
-            echo "${COUNT},${CUR_LAT},${FRAG}"
-            echo "${COUNT},${CUR_LAT},${FRAG}" >> ${FILE_DATA} 
+            echo "${COUNT},${CUR_LAT}"
+            echo "${COUNT},${CUR_LAT}" >> ${FILE_DATA} 
         fi
 
         COUNT=`expr ${COUNT} + 1` 
